@@ -1,5 +1,6 @@
-#' Generate Seeded Intervals
-#'
+#' Generate Seeded Intervals (cho2024detection)
+#' Approach proposed by Cho et al.(2024): Detection and inference of changes in high-dimensional linear regression with non-sparse structures
+#' 
 #' Constructs a collection of overlapping intervals of varying lengths across a time series,
 #' used to scan for potential change points. The intervals decay in size geometrically,
 #' ensuring coverage at multiple resolutions.
