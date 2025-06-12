@@ -1,0 +1,213 @@
+---
+title: "change_point_tensor_structure"
+output: pdf_document
+date: "2025-06-10"
+---
+
+```{r package}
+library(tensorMiss)
+#library(RSpectra) #fast svd
+
+source('supporting_func.R')
+source('single_cp_stackedCUSUM.R')
+#source('seeded_intervals.R')
+```
+
+
+
+```{r}
+# set.seed(2025)
+K <- 2
+TT <- 200
+p <- c(30,30)
+r <- c(3,4)
+
+theta_1 <- TT/2 #first change point
+
+### loading (original)
+A_list <- list()
+for (k in 1:K){A_list[[k]] <- matrix(rnorm(p[k]*r[k]), nrow=p[k], ncol=r[k])}
+### core factor
+Ft <- array(0, dim=c(TT,prod(r)))
+for (i in 1:prod(r)){ Ft[,i] <- arima.sim(n=TT, model=list(ar=c(0.7))) }
+Ft <- KOFM::ten_reshape_back(ten = Ft, AA=c(1,2), original.dim = c(TT,r))
+
+
+### change in mode-1: diagonal
+# M <- matrix(c(1,0,0, 0,1,0, 1,0,1), byrow=TRUE, nrow=r[1], ncol=r[1])
+# M <- diag(c(0.5,1,1),nrow=r[1])
+# M <- diag(100,nrow=r[1])
+# M <- matrix(c(1,0,0, 2,2,0, 3,3,3), byrow=TRUE, nrow=r[1], ncol=r[1])
+# M <- matrix(runif(r[1]^2, min=-2,max=2), byrow=TRUE, nrow=r[1], ncol=r[1])
+
+# A_change <- A_list[[1]] %*% M
+A_change <-  A_list[[1]] + matrix(runif(p[1]*r[1], min=-1,max=1), nrow=p[1], ncol=r[1])
+# A_change <-  (A_list[[1]] + matrix(runif(p[1]*r[1], min=-1,max=1), nrow=p[1], ncol=r[1]))%*% M
+
+Ct <- array(0, dim=c(TT,p))
+for (t in 1:TT){
+  if (t<=theta_1){ Ct[t,,] <- A_list[[1]] %*% Ft[t,,] %*% t(A_list[[2]]) }
+  else { Ct[t,,] <- A_change %*% Ft[t,,] %*% t(A_list[[2]]) }
+}
+
+
+Et <- array(0, dim=c(TT,prod(p)))
+for (i in 1:prod(p)){ Et[,i] <- arima.sim(n=TT, model=list(ar=c(0.7))) }
+Et <- KOFM::ten_reshape_back(ten = Et, AA=c(1,2), original.dim = c(TT,p))
+
+Xt <- Ct +Et
+```
+
+
+global estimation
+```{r}
+A_est <- list()
+for (k in 1:K){ A_est[[k]] <- sqrt(p[k]) * eigen(unfold(Xt,k+1) %*% t(unfold(Xt,k+1)))$vectors[,1:r[k]] }
+Gt_est <- Xt/prod(p)
+for (k in 1:K){ Gt_est <- ttm(Gt_est, t(A_est[[k]]), k+1) }
+
+## detection
+Gt_est_reshape <- KOFM::ten_reshape(Gt_est, 1, time.mode=FALSE)
+cand_sbs(Gt_est_reshape,r, single=TRUE)
+```
+
+identify
+```{r}
+A_est_pre <- list()
+for (k in 1:K){ A_est_pre[[k]] <- sqrt(p[k]) * eigen(unfold(Xt[1:theta_1,,],k+1) %*% t(unfold(Xt[1:theta_1,,],k+1)))$vectors[,1:r[k]] }
+A_est_after <- list()
+for (k in 1:K){ A_est_after[[k]] <- sqrt(p[k]) * eigen(unfold(Xt[(theta_1+1):TT,,],k+1) %*% t(unfold(Xt[(theta_1+1):TT,,],k+1)))$vectors[,1:r[k]] }
+
+Gt_est_pre <- Xt[1:theta_1,,]/prod(p)
+Gt_est_after <- Xt[(theta_1+1):TT,,]/prod(p)
+for (k in 1:K){ Gt_est_pre <- ttm(Gt_est_pre, t(A_est_pre[[k]]), k+1) }
+for (k in 1:K){ Gt_est_after <- ttm(Gt_est_after, t(A_est_after[[k]]), k+1) }
+
+Ct_est_pre <- Gt_est_pre
+for (k in 1:K){ Ct_est_pre <- ttm(Ct_est_pre, A_est_pre[[k]], k+1) }
+Ct_est_after <- Gt_est_after
+for (k in 1:K){ Ct_est_after <- ttm(Ct_est_after, A_est_after[[k]], k+1) }
+
+
+segment_1 <- theta_1^(-1) * unfold(Gt_est_pre, 2) %*% t(unfold(Gt_est_pre, 2))
+segment_2 <- (TT-theta_1)^(-1) * unfold(Gt_est_after, 2) %*% t(unfold(Gt_est_after, 2))
+
+## ratio-based
+segment_2/segment_1
+
+eigen(segment_2)$values / eigen(segment_1)$values
+
+## eigenspace distance for pseudo-factor covariance
+fle(eigen(segment_1)$vectors[,1:2], eigen(segment_2)$vectors[,1:2])
+
+
+## eigenspace distance for common component covariance
+segment_1 <- theta_1^(-1) * unfold(Ct_est_pre, 2) %*% t(unfold(Ct_est_pre, 2))
+segment_2 <- (TT-theta_1)^(-1) * unfold(Ct_est_after, 2) %*% t(unfold(Ct_est_after, 2))
+fle(eigen(segment_1)$vectors[,1:r[1]], eigen(segment_2)$vectors[,1:r[1]])
+
+## eigenspace distance for data covariance
+segment_1 <- theta_1^(-1) * unfold(Xt[1:theta_1,,], 2) %*% t(unfold(Xt[1:theta_1,,], 2))
+segment_2 <- (TT-theta_1)^(-1) * unfold(Xt[(theta_1+1):TT,,], 2) %*% t(unfold(Xt[(theta_1+1):TT,,], 2))
+fle(eigen(segment_1)$vectors[,1:r[1]], eigen(segment_2)$vectors[,1:r[1]])
+
+
+
+### ---------------- for mode-2 ---------------- 
+
+segment_1 <- theta_1^(-1) * unfold(Gt_est_pre, 3) %*% t(unfold(Gt_est_pre, 3))
+segment_2 <- (TT-theta_1)^(-1) * unfold(Gt_est_after, 3) %*% t(unfold(Gt_est_after, 3))
+
+## ratio-based
+segment_2/segment_1
+
+eigen(segment_2)$values / eigen(segment_1)$values
+
+## eigenspace distance for pseudo-factor covariance
+fle(eigen(segment_1)$vectors[,1:3], eigen(segment_2)$vectors[,1:3])
+
+
+## eigenspace distance for common component covariance
+segment_1 <- theta_1^(-1) * unfold(Ct_est_pre, 3) %*% t(unfold(Ct_est_pre, 3))
+segment_2 <- (TT-theta_1)^(-1) * unfold(Ct_est_after, 3) %*% t(unfold(Ct_est_after, 3))
+fle(eigen(segment_1)$vectors[,1:r[2]], eigen(segment_2)$vectors[,1:r[2]])
+
+## eigenspace distance for data covariance
+segment_1 <- theta_1^(-1) * unfold(Xt[1:theta_1,,], 3) %*% t(unfold(Xt[1:theta_1,,], 3))
+segment_2 <- (TT-theta_1)^(-1) * unfold(Xt[(theta_1+1):TT,,], 3) %*% t(unfold(Xt[(theta_1+1):TT,,], 3))
+fle(eigen(segment_1)$vectors[,1:r[2]], eigen(segment_2)$vectors[,1:r[2]])
+
+```
+
+
+# ignore below
+```{r}
+A_est <- list()
+for (k in 1:K){ A_est[[k]] <- sqrt(p[k]) * eigen(unfold(Xt,k+1) %*% t(unfold(Xt,k+1)))$vectors[,1:r[k]] }
+Gt_est <- Xt/prod(p)
+for (k in 1:K){ Gt_est <- ttm(Gt_est, t(A_est[[k]]), k+1) }
+
+Ct_est <- Gt_est
+for (k in 1:K){ Ct_est <- ttm(Ct_est, A_est[[k]], k+1) }
+
+# sum((Ct_est - Xt)^2)/prod(dim(Xt))
+# tensorMiss::fle(A_est[[1]],A_list[[1]])
+# tensorMiss::fle(A_est[[2]],A_list[[2]])
+
+
+segment_1 <- theta_1^(-1) * unfold(Gt_est[1:theta_1,,], 2) %*% t(unfold(Gt_est[1:theta_1,,], 2))
+segment_2 <- (TT-theta_1)^(-1) * unfold(Gt_est[(theta_1+1):TT,,], 2) %*% t(unfold(Gt_est[(theta_1+1):TT,,], 2))
+
+## ratio-based
+segment_2/segment_1
+
+eigen(segment_2)$values / eigen(segment_1)$values
+
+## eigenspace distance for pseudo-factor covariance
+# fle(eigen(segment_1)$vectors, eigen(segment_2)$vectors)
+fle(eigen(segment_1)$vectors[,1:2], eigen(segment_2)$vectors[,1:2])
+# norm((eigen(segment_1)$vectors[,1:2] %*% t(eigen(segment_1)$vectors[,1:2])) - (eigen(segment_2)$vectors[,1:2] %*% t(eigen(segment_2)$vectors[,1:2])), "2")
+
+
+## eigenspace distance for common component covariance
+segment_1 <- theta_1^(-1) * unfold(Ct_est[1:theta_1,,], 2) %*% t(unfold(Ct_est[1:theta_1,,], 2))
+segment_2 <- (TT-theta_1)^(-1) * unfold(Ct_est[(theta_1+1):TT,,], 2) %*% t(unfold(Ct_est[(theta_1+1):TT,,], 2))
+fle(eigen(segment_1)$vectors[,1:r[1]], eigen(segment_2)$vectors[,1:r[1]])
+
+## eigenspace distance for data covariance
+segment_1 <- theta_1^(-1) * unfold(Xt[1:theta_1,,], 2) %*% t(unfold(Xt[1:theta_1,,], 2))
+segment_2 <- (TT-theta_1)^(-1) * unfold(Xt[(theta_1+1):TT,,], 2) %*% t(unfold(Xt[(theta_1+1):TT,,], 2))
+fle(eigen(segment_1)$vectors[,1:r[1]], eigen(segment_2)$vectors[,1:r[1]])
+
+
+
+### ---------------- for mode-2 ---------------- 
+
+segment_1 <- theta_1^(-1) * unfold(Gt_est[1:theta_1,,], 3) %*% t(unfold(Gt_est[1:theta_1,,], 3))
+segment_2 <- (TT-theta_1)^(-1) * unfold(Gt_est[(theta_1+1):TT,,], 3) %*% t(unfold(Gt_est[(theta_1+1):TT,,], 3))
+
+## ratio-based
+segment_2/segment_1
+
+eigen(segment_2)$values / eigen(segment_1)$values
+
+
+## eigenspace distance for pseudo-factor covariance
+# fle(eigen(segment_1)$vectors, eigen(segment_2)$vectors)
+fle(eigen(segment_1)$vectors[,1:4], eigen(segment_2)$vectors[,1:4])
+
+## eigenspace distance for common component covariance
+segment_1 <- theta_1^(-1) * unfold(Ct_est[1:theta_1,,], 3) %*% t(unfold(Ct_est[1:theta_1,,], 3))
+segment_2 <- (TT-theta_1)^(-1) * unfold(Ct_est[(theta_1+1):TT,,], 3) %*% t(unfold(Ct_est[(theta_1+1):TT,,], 3))
+fle(eigen(segment_1)$vectors[,1:r[2]], eigen(segment_2)$vectors[,1:r[2]])
+
+## eigenspace distance for data covariance
+segment_1 <- theta_1^(-1) * unfold(Xt[1:theta_1,,], 3) %*% t(unfold(Xt[1:theta_1,,], 3))
+segment_2 <- (TT-theta_1)^(-1) * unfold(Xt[(theta_1+1):TT,,], 3) %*% t(unfold(Xt[(theta_1+1):TT,,], 3))
+fle(eigen(segment_1)$vectors[,1:r[2]], eigen(segment_2)$vectors[,1:r[2]])
+
+```
+
+
+
+
