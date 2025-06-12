@@ -92,8 +92,8 @@ single_identify <- function(M1,
         C0 <- mode_cov(cc_pre, k, 0, true_cp)
         C1 <- mode_cov(cc_post, k, 0, TT - true_cp)
         
-        U0 <- eigen(C0, symmetric = TRUE)$vectors
-        U1 <- eigen(C1, symmetric = TRUE)$vectors
+        U0 <- eigen(C0, symmetric = TRUE)$vectors[, seq_len(r_pre[k]), drop = FALSE]
+        U1 <- eigen(C1, symmetric = TRUE)$vectors[, seq_len(r_post[k]), drop = FALSE]
         
         Dmat[rep, k] <- norm(U1 %*% t(U1) - U0 %*% t(U0), "2")
       }
