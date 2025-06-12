@@ -1,115 +1,74 @@
-#' Global PCA estimation to derive time-invariant loadings and pseudo factors
-#'
-#' Performs a one‐shot principal component analysis on an array \code{X} of arbitrary order (vector, matrix, or tensor)
-#' by:
-#'   1. Calculating mode-wise covariance matrices across time;
-#'   2. Selecting the number of factors in each mode via the ABC median rule (Haeran MOSUM paper);
-#'   3. Computing orthonormal loading matrices scaled by \(\sqrt{p_i}\);
-#'   4. Extracting pseudo factors \(G_t\) by successive mode-\(n\) projections of each time-slice.
-#'
-#' @param X An array of size \code{c(p1, p2, …, pK, T)}, where modes \(1\ldots K\) index the spatial dimensions and
-#'   mode \(K+1\) indexes time (\(T\) observations).
-#' @param dim_X Integer vector of length \(K\), giving the observation dimension \code{p_i} for each mode \(i=1,\dots,K\).
-#'
-#' @return A named list with components:
-#'   \describe{
-#'     \item{\code{r_hat}}{Integer vector of length \(K\) with the estimated number of factors in each mode.}
-#'     \item{\code{Lambda}}{List of length \(K\); each element is a \code{p_i × r_hat[i]} matrix of estimated loadings, scaled by \(\sqrt{p_i}\).}
-#'     \item{\code{G}}{An array of size \code{c(r_hat, T)} giving the pseudo factors \(G_t\) for each time \(t\).}
-#'   }
-#'
-#' @details
-#' For each mode \(i\):
-#' * We permute \code{X} so that mode \(i\) is the first dimension and time is the last, then reshape to a matrix
-#'   \(\mathbf{X}_{(i)}\) of size \(p_i × (T \prod_{j\neq i} p_j)\).
-#' * We form the mode-wise covariance \(M_i = \frac1T\,\mathbf{X}_{(i)}\,\mathbf{X}_{(i)}^\top\).
-#' * The ABC median rule \code{abc.factor.number} is applied to \code{M_i} to choose \(r_i\).
-#' * We take the first \(r_i\) eigenvectors of \code{M_i}, scale each by \(\sqrt{p_i}\), and store as \(\Lambda_i\).
-#'
-#' The pseudo‐factor at time \(t\) is then
-#' \[
-#'   G_t \;=\;X_t
-#'     \times_{i=1}^K \Lambda_i^\top
-#' \]
-#' i.e.\ successive \(n\)-mode products of each slice \(X_t\) by \(\Lambda_i^\top\).
-#'
-#'
-#' @export
-
-
-gloal_pca <- function(X, dim_X) {
-  #X <- centre_X(X)
+# Global PCA (can "global" on a given window)
+global_pca <- function(X, dim_X,
+                       st = NULL,
+                       ed = NULL,
+                       centre  = FALSE) {
   
-  K    <- length(dim_X)
-  dims <- dim(X)
-  Time <- dims[K + 1]
+  if (centre) X <- centre_X(X)
   
-  # r_hat and loadings
-  r_hat  <- integer(K)
+  K <- length(dim_X)
+  all_dims <- dim(X)
+  TT <- all_dims[K + 1]       
+  
+  if (is.null(st)) st <- 1
+  if (is.null(ed)) ed <- TT
+  if (st < 1 || ed > TT || st > ed)
+    stop("`st` and `ed` must satisfy 1 ≤ st ≤ ed ≤ Time.")
+  
+  idx_time <- st:ed           
+  T_win <- length(idx_time)      
+  
+  r_hat <- integer(K)
   Lambda <- vector("list", K)
+  
+  X_win <- slice_time(X, idx_time)
+  
   for (i in seq_len(K)) {
     perm <- c(i, setdiff(seq_len(K), i), K + 1)
-    Xp   <- aperm(X, perm)
+    Xp <- aperm(X_win, perm)
     Xmat <- matrix(Xp, nrow = dim_X[i])
-    M_i  <- Xmat %*% t(Xmat) / Time
     
+    M_i <- Xmat %*% t(Xmat) / T_win
     r_i <- median(abc.factor.number(M_i)$r[4:6])
     eig <- eigen(M_i, symmetric = TRUE)
-    Vi <- eig$vectors[, seq_len(r_i), drop = FALSE]
     
-    Lambda[[i]] <- Vi * sqrt(dim_X[i])
+    Lambda[[i]] <- eig$vectors[, seq_len(r_i), drop = FALSE] * sqrt(dim_X[i])
     r_hat[i] <- r_i
   }
-  names(r_hat) <- paste0("r_mode", seq_len(K))
-  names(Lambda) <- paste0("Lambda_mode", seq_len(K))
+  names(r_hat) <- sprintf("r_mode%d", seq_len(K))
+  names(Lambda) <- sprintf("Lambda_mode%d", seq_len(K))
   
-  # K==1, vector
+  ## pseudo factors
   if (K == 1) {
-    G <- t(Lambda[[1]]) %*% X
-    
+    G <- t(Lambda[[1]]) %*% X_win
   } else {
-    # mode-n multiplication
-    mode_n_mult <- function(tensor, M, mode) {
-      dims_t  <- dim(tensor)
-      perm <- c(mode, setdiff(seq_len(length(dims_t)), mode))
-      tmp <- aperm(tensor, perm)
-      mat <- matrix(tmp, nrow = dims_t[mode])
-      prod <- M %*% mat
-      new_dims <- c(nrow(M), dims_t[-mode])
-      arr <- array(prod, new_dims)
-      inv_perm <- match(seq_len(length(dims_t)), perm)
-      aperm(arr, inv_perm)
-    }
-    
-    G_dims <- c(r_hat, Time)
+    G_dims <- c(r_hat, T_win)
     G <- array(0, G_dims)
     
-    for (t in seq_len(Time)) {
-      # extract the t-th slice
-      idx <- c(rep(list(TRUE), K), list(t))
-      X_t <- do.call(`[`, c(list(X), idx))
+    for (t_idx in seq_len(T_win)) {
+      Xt <- slice_time(X_win, t_idx)
+      gt <- Xt
+      for (i in seq_len(K))
+        gt <- mode_n_mult(gt, t(Lambda[[i]]), i)
       
-      g_t <- X_t
-      for (i in seq_len(K)) {
-        g_t <- mode_n_mult(g_t, t(Lambda[[i]]), i)
-      }
-      
-      if (K == 2) {
-        G[,, t] <- g_t
-      } else if (K == 3) {
-        G[,,, t] <- g_t
-      } else {
-        stop("Only K = 1,2,3 are supported.")
-      }
+      if (K == 2) G[, , t_idx] <- gt
+      else if (K == 3) G[ , , , t_idx] <- gt
+      else stop("Only K = 1, 2, 3 are supported.")
     }
   }
+
+  
+  cc <- est_common_component(G, Lambda, T_win)
   
   list(
-    r_hat = r_hat,    
-    Lambda = Lambda, 
-    G = G     
+    r_hat  = r_hat,
+    Lambda = Lambda,
+    G = G,     
+    cc = cc 
   )
 }
+
+
 
 
 #' Centre an array/matrix/tensor along its last (time) dimension
@@ -125,3 +84,44 @@ centre_X <- function(X) {
   return(Xc)
 }
 
+
+# mode-n multiplication
+mode_n_mult <- function(tensor, M, mode) {
+  dims_t  <- dim(tensor)
+  perm <- c(mode, setdiff(seq_len(length(dims_t)), mode))
+  tmp <- aperm(tensor, perm)
+  mat <- matrix(tmp, nrow = dims_t[mode])
+  prod <- M %*% mat
+  new_dims <- c(nrow(M), dims_t[-mode])
+  arr <- array(prod, new_dims)
+  inv_perm <- match(seq_len(length(dims_t)), perm)
+  aperm(arr, inv_perm)
+}
+
+
+## slices the tensor on the last dimension
+slice_time <- function(A, ind) {
+  K <- length(dim(A)) - 1
+  idx <- c(rep(list(TRUE), K), list(ind))
+  do.call(`[`, c(list(A), idx, list(drop = FALSE)))
+}
+
+
+## common component estimation
+est_common_component <- function(G_hat, Lambda_list, Time) {
+  K <- length(Lambda_list)
+  obs_dims <- vapply(Lambda_list, nrow, integer(1))
+  cc <- array(0, dim = c(obs_dims, Time))
+  
+  for (t in seq_len(Time)) {
+    slice <- array(slice_time(G_hat, t), dim = dim(G_hat)[1:K])
+    for (k in seq_len(K))
+      slice <- mode_n_mult(slice, Lambda_list[[k]], k)
+    
+    if (K == 1) cc[, t] <- slice
+    else if (K == 2) cc[, , t] <- slice
+    else if (K == 3) cc[, , , t] <- slice
+    else stop("Only K = 1, 2, 3 are supported.")
+  }
+  cc
+}
