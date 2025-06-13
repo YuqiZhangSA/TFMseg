@@ -1,0 +1,219 @@
+---
+title: "single_identify+detection_use"
+output: pdf_document
+author: Yuqi Zhang
+date: "2025-06-13"
+---
+
+```{r}
+scripts_to_source <- c(
+  "TNotSBS.R",
+  "global_est.R",
+  "dgp_yuqi.R",
+  "est_factor_number.R",
+  "seeded_intervals.R",
+  "mode_identify.R",
+  "simulate_identify+detection.R"
+)
+
+sapply(scripts_to_source, source)
+```
+
+
+M <- diag(c(1, 1, 3))
+M <- diag(c(1, 2, 3))
+M <- diag(c(1, 2, 1, 1)) #NO, but 
+M <- diag(4); M[1,2] <- 1; M <- t(M)%*%M #YES
+M <- diag(c(1,2,3,2)) YES
+M <- matrix(c(1, 1, 1,
+               0, 1, 1,
+               0, 0, 1), nrow = 3, byrow = TRUE)
+M <- matrix(rnorm(4 * 4, mean = 0, sd = 1), nrow = 4, ncol = 4)
+M <- matrix(rnorm(2 * 2, mean = 0, sd = 1), nrow = 2, ncol = 2)
+
+M <- qr.Q(qr(matrix(rnorm(9), 3, 3))) 
+M <- diag(c(3, 3, 3))
+M <- matrix(c(1, 2, 3,
+               0, 4, 5,
+               0, 0, 6), nrow = 3, byrow = TRUE)
+M <- matrix(c(1, 2, 3,
+               0, 4, 5,
+               0, 0, 0), nrow = 3, byrow = TRUE)
+               
+# single change - one realisation - only identify
+
+```{r}
+res <- dgp_general(
+  model= "matrix",
+  dim_obs = c(100, 100),
+  dim_latent = c(3, 3),
+  Time = 500,
+  coeff = 0.7,
+  true_cp = 250,
+  type_mode = list(c(1)),
+  type_change = list("l"),
+  transform_list = list(list(M, NULL))
+)
+
+X <- res$X
+K <- length(dim(X)) - 1
+dim_obs <- dim(X)[1:K]
+
+idt <- mode_identify(X, dim_obs, cp=250, st= 1, ed= dim(X)[length(dim_obs) + 1])
+idt
+```
+
+# single change - one realisation - only detection
+
+```{r}
+res_est <- gloal_pca(X, dim_obs)
+G <- res_est$G
+G_dim <- as.vector(res_est$r_hat)
+cand_sbs(G, G_dim, V.diag = TRUE, lrv = TRUE, n = NULL, lbd = NULL, single = TRUE)
+```
+
+# single change - with repetition - identify + detection
+
+```{r}
+single_identify_detection(M,
+                          dim_obs = c(100, 100),
+                          dim_latent = c(3, 3),
+                          TT = 500,
+                          true_cp = 500 / 2,
+                          true_mode = 1,
+                          reps = 100,
+                          seed = 1,
+                          detection = TRUE)
+```
+
+
+# Multiple changes
+
+```{r}
+# matrix 2 changes
+res <- dgp_general(
+  model= "matrix",
+  dim_obs = c(100, 100),
+  dim_latent = c(4, 3),
+  Time = 1000,
+  coeff = 0.1,
+  true_cp = c(200, 600),
+  type_mode = list(c(1),    c(2)),
+  type_change = list("l", "f"),
+  shift_ind = list(list(c(80,2), NULL),
+                           list(NULL, NULL)),
+  shift_mean = c(10, 0),
+  shift_var = c(2^2, 0),
+  add_factors = list(c(0, 0),  c(0, 2)),
+  add_factors_coeff = list(c(0, 0),  c(0, 0.1))
+)
+
+X <- res$X
+Time <- dim(X)[3]
+dim_X <- dim(X)[1:2]
+
+res_load <- gloal_pca(X, dim_X)
+G <- res_load$G
+G_dim <- as.vector(res_load$r_hat)
+
+candidates <- cand_sbs(G, G_dim, single = FALSE)
+TNotSBS(G, G_dim, method = c("oracle"), m = 2)
+```
+
+
+
+```{r}
+res <- dgp_general(
+  model = "tensor",
+  dim_obs = c(50, 50, 100),
+  dim_latent  = c(2, 2, 3),
+  Time = 200,
+  coeff = 0.5,
+  true_cp = c(50, 75, 150),
+  type_mode = list(c(1), c(2), c(2,3)),
+  type_change = list("l", "f", c("l", "f")),
+  shift_ind = list(list(c(40,1), NULL, NULL),
+                           list(NULL, NULL, NULL), 
+                           list(NULL, c(20,2), NULL)),
+  shift_mean = c(1, 0, 2),
+  shift_var = c(2^2, 0, 1^2),
+  add_factors = list(c(0, 0, 0),  c(0, 1, 0), c(0, 0, 3)),
+  add_factors_coeff = list(c(0, 0, 0),  c(0, 0.3, 0), c(0, 0, 0.4))
+)
+
+X <- res$X
+Time <- dim(X)[4]
+dim_X <- dim(X)[1:3]
+
+res_load <- gloal_pca(X, dim_X)
+G <- res_load$G
+G_dim <- as.vector(res_load$r_hat)
+
+candidates <- cand_sbs(G, G_dim, single = FALSE)
+TNotSBS(G, G_dim, method = c("oracle"), m = 3)
+
+```
+
+
+
+
+# other types of change
+
+```{r}
+# single row loading change
+set.seed(NULL)
+res_rl <- dgp_general(
+  model= "matrix",
+  dim_obs = c(100, 100),
+  dim_latent = c(4, 3),
+  Time = 500,
+  coeff = 0.7,
+  true_cp = 250,
+  type_mode = list(c(1)),
+  type_change = list("l"),
+  shift_ind = list(list(c(80,2))),
+  shift_mean = c(0),
+  shift_var = c(2^2)
+)
+
+```
+
+```{r}
+# single column loading change
+res_cl <- dgp_general(
+  model= "matrix",
+  dim_obs = c(100, 100),
+  dim_latent = c(4, 3),
+  Time = 500,
+  coeff = 0.7,
+  true_cp = 250,
+  type_mode = list(c(2)),
+  type_change = list("l"),
+  shift_ind = list(list(NULL,c(80,2))),
+  shift_mean = c(0),
+  shift_var = c(2^2)
+)
+
+```
+
+
+```{r}
+# single row factor change
+# set.seed(123)
+res_rf <- dgp_general(
+  model= "matrix",
+  dim_obs = c(100, 100),
+  dim_latent = c(4, 3),
+  Time = 500,
+  coeff = 0.7,
+  true_cp = 250,
+  type_mode = list(c(1)),
+  type_change = list("f"),
+  add_factors = list(c(2, 0)),             # Add 2 row factors
+  add_factors_coeff = list(c(0.5, 0)) 
+)
+
+
+
+```
+
