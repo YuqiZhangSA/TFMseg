@@ -39,7 +39,7 @@ single_identify_detection <- function(M,
     X <- dat$X
     Time <- dim(X)[3]
     dim_X <- dim(X)[1:2]
-    res_load <- gloal_pca(X, dim_X)
+    res_load <- global_pca(X, dim_X)
     G <- res_load$G
     G_dim <- as.vector(res_load$r_hat)
     est_cp <- cand_sbs(G, G_dim, single = TRUE)$est.cp
