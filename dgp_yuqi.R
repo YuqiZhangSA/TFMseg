@@ -34,7 +34,8 @@ dgp_general <- function(
     shift_var = NULL,
     transform_list = NULL,
     add_factors = NULL,
-    add_factors_coeff = NULL
+    add_factors_coeff = NULL,
+    idio = TRUE
 ) {
   model <- match.arg(model)
   M <- switch(model, vector = 1, matrix = 2, tensor = 3)
@@ -213,35 +214,67 @@ dgp_general <- function(
   }
   
   # Observations
-  X <- switch(model,
-              vector = {
-                mat <- matrix(0, dim_obs, Time)
-                for (t in 1:Time) {
-                  mat[, t] <- loadings_hist[[t]][[1]] %*% Ft_hist[[t]] + E[,1,t]
+  if (idio) {
+    X <- switch(model,
+                vector = {
+                  mat <- matrix(0, dim_obs, Time)
+                  for (t in 1:Time) {
+                    mat[, t] <- loadings_hist[[t]][[1]] %*% Ft_hist[[t]] + E[,1,t]
+                  }
+                  mat
+                },
+                matrix = {
+                  arr <- array(0, c(dim_obs, Time))
+                  for (t in 1:Time) {
+                    arr[,,t] <- loadings_hist[[t]][[1]] %*%
+                      Ft_hist[[t]] %*%
+                      t(loadings_hist[[t]][[2]]) +
+                      E[,,t]
+                  }
+                  arr
+                },
+                tensor = {
+                  arr <- array(0, c(dim_obs, Time))
+                  for (t in 1:Time) {
+                    A1 <- mode_n_prod(Ft_hist[[t]], loadings_hist[[t]][[1]], 1)
+                    A2 <- mode_n_prod(A1, loadings_hist[[t]][[2]], 2)
+                    A3 <- mode_n_prod(A2, loadings_hist[[t]][[3]], 3)
+                    arr[,,,t] <- A3 + E[,,,t]
+                  }
+                  arr
                 }
-                mat
-              },
-              matrix = {
-                arr <- array(0, c(dim_obs, Time))
-                for (t in 1:Time) {
-                  arr[,,t] <- loadings_hist[[t]][[1]] %*%
-                    Ft_hist[[t]] %*%
-                    t(loadings_hist[[t]][[2]]) +
-                    E[,,t]
+    )
+  } else{
+    X <- switch(model,
+                vector = {
+                  mat <- matrix(0, dim_obs, Time)
+                  for (t in 1:Time) {
+                    mat[, t] <- loadings_hist[[t]][[1]] %*% Ft_hist[[t]]
+                  }
+                  mat
+                },
+                matrix = {
+                  arr <- array(0, c(dim_obs, Time))
+                  for (t in 1:Time) {
+                    arr[,,t] <- loadings_hist[[t]][[1]] %*%
+                      Ft_hist[[t]] %*%
+                      t(loadings_hist[[t]][[2]])
+                  }
+                  arr
+                },
+                tensor = {
+                  arr <- array(0, c(dim_obs, Time))
+                  for (t in 1:Time) {
+                    A1 <- mode_n_prod(Ft_hist[[t]], loadings_hist[[t]][[1]], 1)
+                    A2 <- mode_n_prod(A1, loadings_hist[[t]][[2]], 2)
+                    A3 <- mode_n_prod(A2, loadings_hist[[t]][[3]], 3)
+                    arr[,,,t] <- A3
+                  }
+                  arr
                 }
-                arr
-              },
-              tensor = {
-                arr <- array(0, c(dim_obs, Time))
-                for (t in 1:Time) {
-                  A1 <- mode_n_prod(Ft_hist[[t]], loadings_hist[[t]][[1]], 1)
-                  A2 <- mode_n_prod(A1, loadings_hist[[t]][[2]], 2)
-                  A3 <- mode_n_prod(A2, loadings_hist[[t]][[3]], 3)
-                  arr[,,,t] <- A3 + E[,,,t]
-                }
-                arr
-              }
-  )
+    )
+  }
+  
   
   list(
     X = X,

@@ -1,73 +1,121 @@
 # Global PCA (can "global" on a given window)
-global_pca <- function(X, dim_X,
-                       st = NULL,
-                       ed = NULL,
-                       centre  = FALSE) {
-  
-  if (centre) X <- centre_X(X)
-  
+global_pca <- function(X, dim_X, r_hat = NULL,
+                       st = NULL, ed = NULL,
+                       centre = FALSE, proj = TRUE) {
   K <- length(dim_X)
   all_dims <- dim(X)
-  TT <- all_dims[K + 1]       
+  TT <- all_dims[K + 1]
   
+  if (centre) X <- centre_X(X)
   if (is.null(st)) st <- 1
   if (is.null(ed)) ed <- TT
-  if (st < 1 || ed > TT || st > ed)
-    stop("`st` and `ed` must satisfy 1 ≤ st ≤ ed ≤ Time.")
-  
-  idx_time <- st:ed           
-  T_win <- length(idx_time)      
-  
-  r_hat <- integer(K)
-  Lambda <- vector("list", K)
-  
+  if (st < 1 || ed > TT || st > ed) stop("`st` and `ed` must satisfy 1 ≤ st ≤ ed ≤ Time.")
+  idx_time <- st:ed
+  T_win <- length(idx_time)
   X_win <- slice_time(X, idx_time)
+  p <- prod(dim_X)
   
+  # Step 1: Initial PCA estimator
+  if (is.null(r_hat)) { r_hat <- integer(K) }
+  Lambda_init <- vector("list", K)
   for (i in seq_len(K)) {
     perm <- c(i, setdiff(seq_len(K), i), K + 1)
     Xp <- aperm(X_win, perm)
     Xmat <- matrix(Xp, nrow = dim_X[i])
-    
     M_i <- Xmat %*% t(Xmat) / T_win
-    r_i <- median(abc.factor.number(M_i)$r[4:6])
+    if (is.null(r_hat) || is.na(r_hat[i]) || r_hat[i] == 0) {
+      # change point number est -- use Haeran's method (ABC)
+      r_i <- median(abc.factor.number(M_i)$r[4:6])
+      r_hat[i] <- r_i
+    } else r_i <- r_hat[i]
     eig <- eigen(M_i, symmetric = TRUE)
-    
-    Lambda[[i]] <- eig$vectors[, seq_len(r_i), drop = FALSE] * sqrt(dim_X[i])
-    r_hat[i] <- r_i
+    Lambda_init[[i]] <- eig$vectors[, seq_len(r_i), drop = FALSE] * sqrt(dim_X[i])
   }
   names(r_hat) <- sprintf("r_mode%d", seq_len(K))
-  names(Lambda) <- sprintf("Lambda_mode%d", seq_len(K))
+  names(Lambda_init) <- sprintf("Lambda_init_mode%d", seq_len(K))
   
-  ## pseudo factors
+  # Initial pseudo-factors G and common component
   if (K == 1) {
-    G <- t(Lambda[[1]]) %*% X_win
+    G <- t(Lambda_init[[1]]) %*% X_win / p
   } else {
     G_dims <- c(r_hat, T_win)
     G <- array(0, G_dims)
-    
     for (t_idx in seq_len(T_win)) {
       Xt <- slice_time(X_win, t_idx)
       gt <- Xt
       for (i in seq_len(K))
-        gt <- mode_n_mult(gt, t(Lambda[[i]]), i)
-      
-      if (K == 2) G[, , t_idx] <- gt
-      else if (K == 3) G[ , , , t_idx] <- gt
+        gt <- mode_n_mult(gt, t(Lambda_init[[i]]), i)
+      if (K == 2) G[, , t_idx] <- gt / p
+      else if (K == 3) G[ , , , t_idx] <- gt / p
       else stop("Only K = 1, 2, 3 are supported.")
     }
   }
-
+  cc <- est_common_component(G, Lambda_init, T_win)
   
-  cc <- est_common_component(G, Lambda, T_win)
+  # If not projection, return initial
+  if (!proj) {
+    return(list(
+      r_hat = r_hat,
+      Lambda_init = Lambda_init,
+      G = G,
+      cc = cc
+    ))
+  }
   
-  list(
-    r_hat  = r_hat,
-    Lambda = Lambda,
-    G = G,     
-    cc = cc 
-  )
+  # Step 2: Projected estimator
+  Lambda_proj <- vector("list", K)
+  for (k in seq_len(K)) {
+    Lambda_mk <- Lambda_init[-k]
+    Lambda_kron <- kronecker_list(rev(Lambda_mk)) # reverse for index order
+    p_k <- dim_X[k]
+    p_mk <- prod(dim_X[-k])
+    Y_list <- vector("list", T_win)
+    for (t in seq_len(T_win)) {
+      Xkt <- matrix(slice_time(X_win, t), nrow = p_k)
+      Ykt_t <- (1 / p_mk) * Xkt %*% Lambda_kron
+      Y_list[[t]] <- Ykt_t
+    }
+    sum_Y <- matrix(0, nrow = p_k, ncol = p_k)
+    for (t in seq_len(T_win)) {
+      Ykt_t <- Y_list[[t]]  # (p_k x rmk)
+      sum_Y <- sum_Y + Ykt_t %*% t(Ykt_t)
+    }
+    Gamma_Y <- sum_Y / (T_win * p_k)
+    r_k <- r_hat[k]
+    eigY <- eigen(Gamma_Y, symmetric = TRUE)
+    Lambda_proj[[k]] <- eigY$vectors[, seq_len(r_k), drop = FALSE] * sqrt(p_k)
+  }
+  names(Lambda_proj) <- sprintf("Lambda_proj_mode%d", seq_len(K))
+  
+  # projected pseudo-factors and common component
+  if (K == 1) {
+    G_proj <- t(Lambda_proj[[1]]) %*% X_win / p
+  } else {
+    G_dims <- c(r_hat, T_win)
+    G_proj <- array(0, G_dims)
+    for (t_idx in seq_len(T_win)) {
+      Xt <- slice_time(X_win, t_idx)
+      gt <- Xt
+      for (i in seq_len(K))
+        gt <- mode_n_mult(gt, t(Lambda_proj[[i]]), i)
+      if (K == 2) G_proj[, , t_idx] <- gt / p
+      else if (K == 3) G_proj[ , , , t_idx] <- gt / p
+      else stop("Only K = 1, 2, 3 are supported.")
+    }
+  }
+  
+  cc_proj <- est_common_component(G_proj, Lambda_proj, T_win)
+  
+  return(list(
+    r_hat = r_hat,
+    Lambda_init = Lambda_init,
+    G_init = G,
+    cc_init = cc,
+    Lambda_proj = Lambda_proj,
+    G_proj = G_proj,
+    cc_proj = cc_proj
+  ))
 }
-
 
 
 
@@ -124,4 +172,14 @@ est_common_component <- function(G_hat, Lambda_list, Time) {
     else stop("Only K = 1, 2, 3 are supported.")
   }
   cc
+}
+
+
+kronecker_list <- function(mat_list) {
+  result <- mat_list[[1]]
+  if (length(mat_list) == 1) return(result)
+  for (i in 2:length(mat_list)) {
+    result <- kronecker(result, mat_list[[i]])
+  }
+  result
 }
