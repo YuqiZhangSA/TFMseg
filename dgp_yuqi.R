@@ -177,30 +177,38 @@ dgp_general <- function(
           t0 <- cps[j] + 1
           t1 <- if (j < q_true) cps[j+1] else Time
           L  <- t1 - t0 + 1
-          raw <- VAR1_vec(k * prod(cur_latent[-m]), L,
-                          add_factors_coeff[[j]][m])
-          
+          prod_other <- prod(cur_latent[-m])
+          raw <- VAR1_vec(k * prod_other, L, add_factors_coeff[[j]][m])
           for (ii in seq_len(L)) {
             idx <- t0 + ii - 1
             if (M == 2) {
-              arr_n <- array(raw[, ii],
-                             c(if (m==1) k else cur_latent[1],
-                               if (m==2) k else cur_latent[2]))
-              if (m==1) Ft_full[(cur_latent[1]+1):(cur_latent[1]+k), , idx] <- arr_n
-              if (m==2) Ft_full[, (cur_latent[2]+1):(cur_latent[2]+k), idx] <- arr_n
+              if (m == 1) {
+                arr_n <- array(raw[, ii], c(k, cur_latent[2]))
+                Ft_full[(cur_latent[1] + 1):(cur_latent[1] + k), seq_len(cur_latent[2]), idx] <- arr_n
+              }
+              if (m == 2) {
+                arr_n <- array(raw[, ii], c(cur_latent[1], k))
+                Ft_full[seq_len(cur_latent[1]), (cur_latent[2] + 1):(cur_latent[2] + k), idx] <- arr_n
+              }
             }
             if (M == 3) {
-              dims <- cur_latent
-              arr_n <- array(raw[, ii],
-                             c(if (m==1) k else dims[1],
-                               if (m==2) k else dims[2],
-                               if (m==3) k else dims[3]))
-              if (m==1) Ft_full[(dims[1]+1):(dims[1]+k), , , idx] <- arr_n
-              if (m==2) Ft_full[, (dims[2]+1):(dims[2]+k), , idx] <- arr_n
-              if (m==3) Ft_full[, , (dims[3]+1):(dims[3]+k), idx] <- arr_n
+              sel1 <- seq_len(cur_latent[1])
+              sel2 <- seq_len(cur_latent[2])
+              sel3 <- seq_len(cur_latent[3])
+              if (m == 1) {
+                arr_n <- array(raw[, ii], c(k, cur_latent[2], cur_latent[3]))
+                Ft_full[(cur_latent[1] + 1):(cur_latent[1] + k), sel2, sel3, idx] <- arr_n
+              }
+              if (m == 2) {
+                arr_n <- array(raw[, ii], c(cur_latent[1], k, cur_latent[3]))
+                Ft_full[sel1, (cur_latent[2] + 1):(cur_latent[2] + k), sel3, idx] <- arr_n
+              }
+              if (m == 3) {
+                arr_n <- array(raw[, ii], c(cur_latent[1], cur_latent[2], k))
+                Ft_full[sel1, sel2, (cur_latent[3] + 1):(cur_latent[3] + k), idx] <- arr_n
+              }
             }
           }
-          
           loadings_current[[m]] <- cbind(
             loadings_current[[m]],
             matrix(runif(dim_obs[m] * k, -1, 1), nrow = dim_obs[m])
@@ -209,6 +217,7 @@ dgp_general <- function(
         }
       }
     }
+    
     
     start_t <- cps[j] + 1
   }
