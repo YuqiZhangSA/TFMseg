@@ -4,7 +4,7 @@ global_pca <- function(X, dim_X, r_hat = NULL,
   K <- length(dim_X)
   all_dims <- dim(X)
   TT <- all_dims[K + 1]
-  if (centre) X <- centre_X(X)
+  if (centre) X <- centre_along_axis(X, K+1)
   if (is.null(st)) st <- 1
   if (is.null(ed)) ed <- TT
   if (st < 1 || ed > TT || st > ed) stop("`st` and `ed` must satisfy 1 ≤ st ≤ ed ≤ Time.")
@@ -12,20 +12,31 @@ global_pca <- function(X, dim_X, r_hat = NULL,
   T_win <- length(idx_time)
   X_win <- slice_time(X, idx_time)
   p <- prod(dim_X)
+  #if (is.null(r_hat)) {
+    #X_perm <- aperm(X_win, c(length(all_dims), seq_len(length(all_dims) - 1)))
+    #r_hat <- TFM_FN(X_perm, method = "PE")$factor.num
+    #r_hat[1] <- r_hat[1] + 4 # manually add 3
+    #r_hat[2] <- r_hat[2] + 3 
+    #r_hat[3] <- r_hat[3] + 2 
+   #}
+  if (is.null(r_hat)) {
+    st_r <- max(1L, ceiling(0.65 * TT)) 
+    X_for_r <- slice_time(X, st_r:TT)   
+    X_perm <- aperm(X_for_r, c(length(dim(X_for_r)), seq_len(length(dim(X_for_r)) - 1)))
+    r_hat <- TFM_FN(X_perm, method = "PE")$factor.num
+    r_hat[1] <- r_hat[1]+2 # manually add 2
+    #r_hat[2] <- r_hat[2]+2 # manually add 1
+    #r_hat <- c(5,4,3)
+  }
   
   # Step 1: Initial PCA estimator
-  if (is.null(r_hat)) r_hat <- integer(K)
   Lambda_init <- vector("list", K)
   for (i in seq_len(K)) {
     perm <- c(i, setdiff(seq_len(K), i), K + 1)
     Xp <- aperm(X_win, perm)
     Xmat <- matrix(Xp, nrow = dim_X[i])
     M_i <- Xmat %*% t(Xmat) / T_win
-    if (is.null(r_hat) || is.na(r_hat[i]) || r_hat[i] == 0) {
-      # Use ABC's method to estimate r_i
-      r_i <- median(abc.factor.number(M_i)$r[4:6])
-      r_hat[i] <- r_i
-    } else r_i <- r_hat[i]
+    r_i <- r_hat[i]
     eig <- eigen(M_i, symmetric = TRUE)
     Lambda_init[[i]] <- eig$vectors[, seq_len(r_i), drop = FALSE] * sqrt(dim_X[i])
   }
@@ -119,12 +130,15 @@ global_pca <- function(X, dim_X, r_hat = NULL,
 }
 
 
-# Helper: Centre array/matrix/tensor along temporal dimension
-centre_X <- function(X) {
-  dims <- dim(X)
-  K <- length(dims) - 1
-  mean_array <- apply(X, seq_len(K), mean)
-  sweep(X, seq_len(K), mean_array, FUN = "-")
+# Helper: Centre array/matrix/tensor along axis
+centre_along_axis <- function(A, axis) {
+  d <- dim(A)
+  perm <- c(setdiff(seq_along(d), axis), axis)
+  Aperm <- aperm(A, perm)
+  K <- length(d) - 1L
+  mean_array <- apply(Aperm, MARGIN = seq_len(K), FUN = mean)
+  Acent <- sweep(Aperm, MARGIN = seq_len(K), STATS = mean_array, FUN = "-")
+  aperm(Acent, order(perm))
 }
 
 # Helper: mode-n multiplication (M %*% unfold_n(tensor))
@@ -140,11 +154,22 @@ mode_n_mult <- function(tensor, M, mode) {
   aperm(arr, inv_perm)
 }
 
-# Helper: Extract a slice along the temporal dimension
+# Helper: Extract a slice along the temporal dimension, by index
 slice_time <- function(A, ind) {
   K <- length(dim(A)) - 1
   idx <- c(rep(list(TRUE), K), list(ind))
   do.call(`[`, c(list(A), idx, list(drop = FALSE)))
+}
+
+# Helper: Remove (collapse) one mode by aggregation
+remove_mode <- function(A, mode, FUN = mean, ...) {
+  dims <- seq_along(dim(A))
+  keep <- dims[-mode]
+  res <- apply(A, MARGIN = keep, FUN = FUN, ...)
+  if (length(keep) == 1) {
+    dim(res) <- dim(A)[keep]
+  }
+  return(res)
 }
 
 # Helper: Kronecker product of a list of matrices (right-to-left order)

@@ -25,6 +25,7 @@ dgp_general <- function(
     dim_obs,
     dim_latent,
     Time,
+    dep = TRUE,
     coeff,
     true_cp,
     type_mode,
@@ -43,6 +44,8 @@ dgp_general <- function(
   q_true <- length(true_cp)
   stopifnot(q_true == length(type_mode), q_true == length(type_change))
   cps <- sort(true_cp)
+  
+  if (!dep) coeff <- 0
   
   # Preparation
   matrixvariate_normal <- function(shape, size) array(rnorm(prod(shape) * size), c(shape, size))
@@ -88,11 +91,12 @@ dgp_general <- function(
   # Initialisation
   loadings_current <- vector("list", M)
   for (m in seq_len(M)) {
-    loadings_current[[m]] <- matrix(runif(dim_obs[m] * dim_latent[m], -1, 1),
-                                    nrow = dim_obs[m])
+    loadings_current[[m]] <- matrix(
+      runif(dim_obs[m] * dim_latent[m], -1, 1),
+      nrow = dim_obs[m]
+    )
   }
-  cur_latent <- dim_latent
-  
+  cur_latent   <- dim_latent
   final_latent <- dim_latent
   if (!is.null(add_factors)) {
     for (j in seq_len(q_true)) {
@@ -108,37 +112,45 @@ dgp_general <- function(
     Ft_full <- array(0, c(final_latent, Time))
   }
   
-  base <- VAR1_vec(prod(dim_latent), Time, coeff)
+  base    <- VAR1_vec(prod(dim_latent), Time, coeff)
   Ft_base <- array(base, c(dim_latent, Time))
+  
   if (M == 1) {
     Ft_full[1:dim_latent, ] <- Ft_base
   } else if (M == 2) {
     Ft_full[1:dim_latent[1], 1:dim_latent[2], ] <- Ft_base
   } else {
-    Ft_full[1:dim_latent[1], 1:dim_latent[2], 1:dim_latent[3], ] <- Ft_base
+    Ft_full[1:dim_latent[1],
+            1:dim_latent[2],
+            1:dim_latent[3],
+    ] <- Ft_base
   }
   
   # Histories & noise
   loadings_hist <- vector("list", Time)
   Ft_hist <- vector("list", Time)
-  # Gaussian noise
   E <- switch(model,
-              vector = array(matrixvariate_normal(c(dim_obs,1), Time), c(dim_obs,1,Time)),
+              vector = array(matrixvariate_normal(c(dim_obs,1), Time),
+                             c(dim_obs,1,Time)),
               matrix = matrixvariate_normal(dim_obs, Time),
               tensor = tensorvariate_normal(dim_obs, Time)
   )
   
   record_state <- function(t) {
     loadings_hist[[t]] <<- lapply(loadings_current, function(L) L)
+    
     if (M == 1) {
       Ft_hist[[t]] <<- Ft_full[1:cur_latent, t]
     } else if (M == 2) {
-      Ft_hist[[t]] <<- Ft_full[1:cur_latent[1], 1:cur_latent[2], t]
-    } else {
       Ft_hist[[t]] <<- Ft_full[1:cur_latent[1],
                                1:cur_latent[2],
-                               1:cur_latent[3],
                                t]
+    } else {
+      slice <- Ft_full[1:cur_latent[1],
+                       1:cur_latent[2],
+                       1:cur_latent[3],
+                       t]
+      Ft_hist[[t]] <<- array(slice, dim = cur_latent)
     }
   }
   
@@ -211,7 +223,7 @@ dgp_general <- function(
           }
           loadings_current[[m]] <- cbind(
             loadings_current[[m]],
-            matrix(runif(dim_obs[m] * k, -1, 1), nrow = dim_obs[m])
+            matrix(runif(dim_obs[m] * k, -2, 2), nrow = dim_obs[m]) # changed to U[-2,2]!!!!
           )
           cur_latent[m] <- cur_latent[m] + k
         }
@@ -220,6 +232,7 @@ dgp_general <- function(
     
     
     start_t <- cps[j] + 1
+    
   }
   
   # Observations
