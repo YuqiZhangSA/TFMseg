@@ -12,22 +12,10 @@ global_pca <- function(X, dim_X, r_hat = NULL,
   T_win <- length(idx_time)
   X_win <- slice_time(X, idx_time)
   p <- prod(dim_X)
-  #if (is.null(r_hat)) {
-    #X_perm <- aperm(X_win, c(length(all_dims), seq_len(length(all_dims) - 1)))
-    #r_hat <- TFM_FN(X_perm, method = "PE")$factor.num
-    #r_hat[1] <- r_hat[1] + 4 # manually add 3
-    #r_hat[2] <- r_hat[2] + 3 
-    #r_hat[3] <- r_hat[3] + 2 
-   #}
   if (is.null(r_hat)) {
-    st_r <- max(1L, ceiling(0.65 * TT)) 
-    X_for_r <- slice_time(X, st_r:TT)   
-    X_perm <- aperm(X_for_r, c(length(dim(X_for_r)), seq_len(length(dim(X_for_r)) - 1)))
+    X_perm <- aperm(X_win, c(length(all_dims), seq_len(length(all_dims) - 1)))
     r_hat <- TFM_FN(X_perm, method = "PE")$factor.num
-    r_hat[1] <- r_hat[1]+2 # manually add 2
-    #r_hat[2] <- r_hat[2]+2 # manually add 1
-    #r_hat <- c(5,4,3)
-  }
+   }
   
   # Step 1: Initial PCA estimator
   Lambda_init <- vector("list", K)

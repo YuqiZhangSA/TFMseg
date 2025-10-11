@@ -52,8 +52,8 @@ info_record <- function(num_simu,
     C3[3,1] <- rnorm(1, 0, 1); C3[3,2] <- rnorm(1, 0, 1); C3[3,3] <- 1.5
     transform_list <- list(
       list(C1, diag(3), diag(3)),
-      list(diag(3), C2, diag(3)), 
-      list(diag(3), diag(3), C3)
+      list(diag(3), C3, diag(3)), 
+      list(diag(3), diag(3), C2)
     )
     type_mode <- list(1, 2, 3)
     type_change <- list("l", "l", "l")
@@ -91,13 +91,14 @@ info_record <- function(num_simu,
       shift_ind = shift_ind,
       shift_mean = shift_mean,
       shift_var = shift_var,
+      transform_list = transform_list,
       add_factors = add_factors,
       add_factors_coeff = add_factors_coeff)
     X_t <- data_sim$X
     dim_X <- dim(X_t)[1:3]
-    #est_load <- global_pca(X = X_t, dim_X = dim_X, proj = TRUE)
+    est_load <- global_pca(X = X_t, dim_X = dim_X, proj = TRUE)
     # use true r_hat for regression
-    est_load <- global_pca(X = X_t, dim_X = dim_X, r_hat = c(5,5,3), proj = TRUE) 
+    #est_load <- global_pca(X = X_t, dim_X = dim_X, r_hat = c(3,3,3), proj = TRUE) 
     G <- est_load$G_proj
     G_dim <- as.vector(est_load$r_hat)
     

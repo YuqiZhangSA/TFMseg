@@ -3,9 +3,11 @@
 simu_comparison <- function(method = c("TNotSBS", "FMseg", "LR"), 
                             nrep = 100, 
                             seed_start = 888, 
+                            data_setting = c("s1","s2"),
                             dim_obs,
                             dim_latent,
                             Time,
+                            dist = "Gaussian",
                             coeff = 0.7,
                             dep = TRUE,
                             m = NULL, 
@@ -37,30 +39,69 @@ simu_comparison <- function(method = c("TNotSBS", "FMseg", "LR"),
   for (sim in seq_len(nrep)) {
     set.seed(seed_start + sim)
     
+  if (data_setting == "s1") {
+      type_mode <- list(c(1), c(2), c(1,3))
+      type_change <- list("l", "f", c("f", "l"))
+      shift_ind <- list(list(c(dim_obs[1]/2,dim_latent[1]), NULL, NULL),
+                        list(NULL, NULL, NULL), 
+                        list(NULL, NULL, c(dim_obs[3]/2,dim_latent[3]/2)))
+      shift_mean <- c(1, 0, 0)
+      shift_var <- c(2^2, 0, 1^2)
+      transform_list <- NULL
+      add_factors <- list(c(0, 0, 0),  c(0, 3, 0), c(1, 0, 0))
+      add_factors_coeff <- list(c(0, 0, 0),  c(0, 0.6, 0), c(0.3, 0, 0))
+      true_cp <- theta
+    } else if (data_setting == "s2") {
+      r0 <- 3
+      C1 <- matrix(rnorm(r0^2, mean = 0, sd = 1/sqrt(r0)), nrow = r0)
+      C1[lower.tri(C1)] <- t(C1)[lower.tri(C1)]
+      C2 <- matrix(c(
+        1, 0, 0,
+        0, 1, 0,
+        0, 0, 0
+      ), nrow = 3, byrow = TRUE)
+      C3 <- matrix(0, 3, 3)
+      C3[1,1] <- 0.5; C3[2,1] <- rnorm(1, 0, 1); C3[2,2] <- 1; 
+      C3[3,1] <- rnorm(1, 0, 1); C3[3,2] <- rnorm(1, 0, 1); C3[3,3] <- 1.5
+      transform_list <- list(
+        list(C1, diag(3), diag(3)),
+        list(diag(3), C3, diag(3)), 
+        list(diag(3), diag(3), C2)
+      )
+      type_mode <- list(1, 2, 3)
+      type_change <- list("l", "l", "l")
+      shift_ind <- NULL
+      shift_mean <- NULL
+      shift_var <- NULL
+      add_factors <- NULL
+      add_factors_coeff <- NULL
+      true_cp <- theta
+    }
+    
     data_sim <- dgp_general(
       model = "tensor",
       dim_obs = dim_obs,
-      dim_latent = dim_latent,
+      dim_latent  = dim_latent,
       Time = Time,
       dep = dep,
-      coeff = coeff,
-      true_cp = theta,
-      type_mode = list(c(1), c(2), c(1,3)),
-      type_change = list("l", "f", c("f", "l")),
-      shift_ind = list(list(c(dim_obs[1]/2, dim_latent[1]), NULL, NULL),
-                       list(NULL, NULL, NULL),
-                       list(NULL, NULL, c(dim_obs[3]/2, max(1, dim_latent[3] %/% 2)))),
-      shift_mean = c(1, 0, 0),
-      shift_var = c(2^2, 0, 1^2),
-      add_factors = list(c(0, 0, 0),  c(0, 3, 0), c(1, 0, 0)),
-      add_factors_coeff = list(c(0, 0, 0),  c(0, 0.6, 0), c(0.3, 0, 0))
-    )
+      coeff = 0.7,
+      true_cp = true_cp,
+      type_mode = type_mode,
+      type_change = type_change,
+      shift_ind = shift_ind,
+      shift_mean = shift_mean,
+      shift_var = shift_var,
+      transform_list = transform_list,
+      add_factors = add_factors,
+      add_factors_coeff = add_factors_coeff,
+      dist = dist
+      )
     
     X <- data_sim$X
     dim_X <- dim(X)[1:3]
     
     if (is.null(r_hat)) {
-      est_load <- global_pca(X = X, dim_X = dim_X, proj = TRUE)
+      est_load <- global_pca(X = X, dim_X = dim_X, centre = TRUE, proj = TRUE)
       G <- est_load$G_proj
       G_dim <- as.vector(est_load$r_hat)
     } else {
@@ -75,10 +116,9 @@ simu_comparison <- function(method = c("TNotSBS", "FMseg", "LR"),
       } else {  # fixed
         dr <- sum(G_dim * (G_dim + 1L) / 2L)
         int_len <- max(2L, round(6 * log(Time)))
-        threshold_coef
+        #threshold_coef
         thd <- pmax(exp(threshold_coef[1] * log(log(Time/int_len)) + threshold_coef[2] * log(dr)),
                     threshold_coef[3] * log(Time))
-        #thd <- pmax(exp(0.49207 * log(log(Time/int_len)) + 0.58768 * log(dr)), 1.75702 * log(Time))
         out <- TNotSBS(G, G_dim, method = "fixed", threshold = thd, V.diag = V.diag, lrv = lrv)
       }
       detected_cp <- out$est.cp %||% integer(0)
@@ -129,7 +169,9 @@ simu_comparison <- function(method = c("TNotSBS", "FMseg", "LR"),
 simu_ret <- function(methods = c("TNotSBS", "FMseg", "LR"), 
                      thd.type_values = c("fixed", "oracle"), 
                      V_shap_values = c("diag", "full"), lrv = TRUE,
-                     simulation_settings, 
+                     simu_set_detect, 
+                     dist = "Gaussian",
+                     data_setting = c("s1","s2"),
                      dep = TRUE,
                      theta_coef = NULL, 
                      r_hat = NULL,
@@ -138,6 +180,7 @@ simu_ret <- function(methods = c("TNotSBS", "FMseg", "LR"),
                      threshold_coef = NULL) {
   
   results <- list()
+  data_setting <- match.arg(data_setting)
   
   for (method in methods) {
     thd.type_iter <- if (method == "TNotSBS") thd.type_values else "--"
@@ -145,7 +188,7 @@ simu_ret <- function(methods = c("TNotSBS", "FMseg", "LR"),
     
     for (thd.type in thd.type_iter) {
       for (V_shap in V_shap_iter) {
-        for (setting in simulation_settings) {
+        for (setting in simu_set_detect) {
           Time <- setting$Time
           dim_obs <- setting$dim_obs
           dim_latent <- setting$dim_latent
@@ -155,9 +198,11 @@ simu_ret <- function(methods = c("TNotSBS", "FMseg", "LR"),
           
           res <- simu_comparison(method = method, 
                                  nrep = nrep, 
+                                 data_setting = data_setting,
                                  dim_obs = dim_obs,
                                  dim_latent = dim_latent,
                                  Time = Time,
+                                 dist = dist,
                                  dep = dep,
                                  m = m, 
                                  theta_coef = theta_coef, 

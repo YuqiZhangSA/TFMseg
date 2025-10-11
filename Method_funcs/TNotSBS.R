@@ -216,7 +216,7 @@ TNotSBS <- function(G, G_dim,
     res <- cands[sel, , drop = FALSE]
     res <- res[order(res$est.cp), , drop = FALSE]
     
-    # record selected and no‐change thresholds (noise)
+    # record selected and no‐change thresholds -- largest
     res$selected_threshold <- chosen_th
     res$no_change_threshold <- max(val_vec, na.rm = TRUE)
     
@@ -258,4 +258,136 @@ unfold_mode_k <- function(tensor, mode) {
   perm <- c(mode, setdiff(seq_along(dims), mode))
   unfolded <- aperm(tensor, perm)
   matrix(unfolded, nrow = dims[mode])
+}
+
+compute_next_threshold <- function(current_threshold, S, thds, all_results, Time) {
+  cand_candidates <- sort(thds[thds < current_threshold], decreasing = TRUE)
+  
+  for (cand in cand_candidates) {
+    candidate_intervals <- all_results[all_results$val == cand, , drop = FALSE]
+    if (nrow(candidate_intervals) == 0) next
+    
+    for (j in seq_len(nrow(candidate_intervals))) {
+      st <- candidate_intervals$st[j]
+      ed <- candidate_intervals$ed[j]
+      if (all(S - st < log(Time) | ed - S < log(Time))) {
+        return(cand)
+      }
+    }
+  }
+  return(NA_real_)
+}
+
+
+
+
+
+
+
+
+TNotSBS <- function(G, G_dim,
+                    trim = round(2 * log(dim(G)[length(G_dim) + 1])),
+                    method = c("fixed", "oracle"),
+                    threshold = NULL,
+                    m = NULL,
+                    V.diag = TRUE,
+                    lrv = TRUE,
+                    n = NULL,
+                    lbd = NULL,
+                    single = FALSE) {
+  
+  method <- match.arg(method)
+  
+  # get all candidate intervals
+  cands <- cand_sbs(G, G_dim,
+                    trim = trim,
+                    V.diag = V.diag,
+                    lrv = lrv,
+                    n = n,
+                    lbd = lbd,
+                    single = single)
+  
+  # sort by interval length
+  cands <- cands[order(cands$ed - cands$st), ]
+  st_vec <- cands$st
+  ed_vec <- cands$ed
+  cp_vec <- cands$est.cp
+  val_vec <- cands$val
+  
+  if (method == "fixed") {
+    
+    if (is.null(threshold))
+      stop("Must supply 'threshold' in fixed mode.")
+    
+    avail <- which(val_vec >= threshold + 5e-3)
+    sel <- integer(0)
+    
+    while (length(avail) > 0) {
+      k <- avail[1]
+      sel <- c(sel, k)
+      avail <- avail[-1]
+      overlap <- st_vec[avail] < cp_vec[k] & ed_vec[avail] >= cp_vec[k]
+      if (any(overlap)) 
+        avail <- avail[!overlap]
+    }
+    
+    res <- cands[sel, , drop = FALSE]
+    res <- res[order(res$est.cp), , drop = FALSE]
+    rownames(res) <- NULL
+    
+  } else if (method == "oracle") {
+    
+    if (is.null(m))
+      stop("Must supply 'm' in oracle method.")
+    
+    thds <- sort(unique(val_vec), decreasing = TRUE)
+    sel <- NULL
+    chosen_th <- NA
+    
+    # find the smallest threshold giving m non‐overlapping intervals
+    for (thd in thds) {
+      avail <- which(val_vec >= thd)
+      sel_tmp <- integer(0)
+      
+      while (length(sel_tmp) < m && length(avail) > 0) {
+        k <- avail[1]
+        sel_tmp <- c(sel_tmp, k)
+        avail <- avail[-1]
+        overlap <- st_vec[avail] < cp_vec[k] & ed_vec[avail] >= cp_vec[k]
+        if (any(overlap)) 
+          avail <- avail[!overlap]
+      }
+      
+      if (length(sel_tmp) == m) {
+        sel <- sel_tmp
+        chosen_th <- thd
+        break
+      }
+    }
+    
+    if (is.null(sel))
+      stop(sprintf("Cannot find threshold yielding m = %d", m))
+    
+    res <- cands[sel, , drop = FALSE]
+    res <- res[order(res$est.cp), , drop = FALSE]
+    
+    # record selected and no‐change thresholds -- largest
+    res$selected_threshold  <- chosen_th
+    res$no_change_threshold <- max(val_vec, na.rm = TRUE)
+    
+    Time <- dim(G)[ length(G_dim) + 1 ]
+    S <- res$est.cp
+    all_results <- cands[, c("st","ed","val")]
+    res$next_highest_threshold <- compute_next_threshold(
+      current_threshold = chosen_th,
+      S = S,
+      thds = thds,
+      all_results = all_results,
+      Time = Time
+    )
+    
+    rownames(res) <- NULL
+  }
+  
+  return(res)
 }

@@ -1,25 +1,24 @@
 #' General data‐generating function for vector, matrix and tensor factor models with multiple change points
 #'
-#' This function simulates observations \eqn{X_t} for a latent factor model of type "vector", "matrix", or "tensor",
-#' allowing for multiple change points where loadings and/or factor dimensions may shift.
+#' @param model Character; one of "vector", "matrix", or "tensor".
+#' @param dim_obs Integer vector (length = model order) of observation dimensions per mode.
+#' @param dim_latent Integer vector (length = model order) of initial factor dimensions per mode.
+#' @param Time Integer; total number of time points.
+#' @param dep Logical; if FALSE, factors are i.i.d. over time (sets coeff = 0).
+#' @param coeff Numeric in (-1,1); AR(1) coefficient for all initial factors.
+#' @param true_cp Integer vector of sorted change points (< Time).
+#' @param type_mode List length q_true; at cp j, integer vector of modes that change.
+#' @param type_change List length q_true; each contains any of "l" (loading shift/transform) and/or "f" (factor-number change).
+#' @param shift_ind Optional list length q_true; each a list length = M; per change & mode: c(n_rows, n_cols) submatrix to shift; NULL = skip.
+#' @param shift_mean Numeric vector length q_true; mean for Gaussian loading perturbations.
+#' @param shift_var Numeric vector length q_true; variance for loading perturbations.
+#' @param transform_list Optional list length q_true; each a list length = M; matrices/functions to apply to loadings when "l" present.
+#' @param add_factors Optional list length q_true; each an integer vector length = M of new factor counts per mode when "f" present.
+#' @param add_factors_coeff Optional list length q_true; numeric vector length = M of AR(1) coefficients for newly added factors.
+#' @param idio Logical; include idiosyncratic term E_t.
+#' @param dist Character; "Gaussian" or "heavy" (t_7 rescaled to var 1).
 #'
-#' @param model Character; one of "vector", "matrix", or "tensor" indicating factor‐structure type.
-#' @param dim_obs Integer vector of length equal to model order (1, 2, or 3) giving observation dimensions per mode.
-#' @param dim_latent Integer vector same length as \code{dim_obs}, initial factor dimensions per mode (before any changes).
-#' @param Time Integer; total number of time points to simulate.
-#' @param coeff Numeric in (-1,1); AR(1) coefficient applied to all initial factors.
-#' @param true_cp Integer vector of sorted change points (< Time) where structural changes occur.
-#' @param type_mode List of length \eqn{q_true=length(true_cp)}; each element is an integer vector of mode indices that change.
-#' @param type_change List of same length as \code{true_cp}; each element is a character vector containing any of "l" (loading shift) and/or "f" (factor‐number change).
-#' @param shift_ind Optional list of length \eqn{q_true}, each a list of length=M; for each change and mode: a length‐2 integer vector \code{c(n_rows, n_cols)} specifying submatrix size to shift. NULL skips shift.
-#' @param shift_mean Numeric vector length \eqn{q_true}; Gaussian shift mean for loading perturbations at each change.
-#' @param shift_var Numeric vector length \eqn{q_true}; variance for loading shifts at each change.
-#' @param transform_list Optional list of length \eqn{q_true}, each a list length=M of transformation matrices to apply to loadings when type contains "l".
-#' @param add_factors Optional list of length \eqn{q_true}, each an integer vector length=M of new factor counts per mode when type contains "f".
-#' @param add_factors_coeff Optional list of length \eqn{q_true}, each numeric vector length=M of AR coefficients for newly added factors.
-#'
-#' @return A 3‐way array \code{X} (or matrix for the vector model) of simulated observations with dimensions \code{c(dim_obs, Time)}.
-#' @export
+#' @return list(X, Ft_hist, loadings_hist)
 dgp_general <- function(
     model = c("vector", "matrix", "tensor"),
     dim_obs,
@@ -36,33 +35,42 @@ dgp_general <- function(
     transform_list = NULL,
     add_factors = NULL,
     add_factors_coeff = NULL,
-    idio = TRUE
+    idio = TRUE,
+    dist = c("Gaussian","heavy")
 ) {
   model <- match.arg(model)
-  M <- switch(model, vector = 1, matrix = 2, tensor = 3)
+  dist <- match.arg(dist)
+  M <- switch(model, vector = 1L, matrix = 2L, tensor = 3L)
   stopifnot(length(dim_obs) == M, length(dim_latent) == M)
   q_true <- length(true_cp)
   stopifnot(q_true == length(type_mode), q_true == length(type_change))
   cps <- sort(true_cp)
-  
   if (!dep) coeff <- 0
   
-  # Preparation
-  matrixvariate_normal <- function(shape, size) array(rnorm(prod(shape) * size), c(shape, size))
-  tensorvariate_normal <- function(shape, size) array(rnorm(prod(shape) * size), c(shape, size))
+  # -------- helpers --------
+  runit_noise <- function(n) {
+    if (dist == "Gaussian") rnorm(n) else {
+      df <- 7
+      rt(n, df = df) * sqrt((df - 2) / df)  # unit variance
+    }
+  }
+  matrixvariate_draw <- function(shape, size)
+    array(runit_noise(prod(shape) * size), c(shape, size))
+  
   VAR1_vec <- function(n, size, coeff) {
     stopifnot(abs(coeff) < 1)
     A <- coeff * diag(n)
-    sigma <- sqrt(1 - coeff^2)
-    ft <- rnorm(n)
+    innov_sd <- sqrt(1 - coeff^2)  # stationary var 1
+    ft <- runit_noise(n)
     out <- array(0, c(n, size))
     out[, 1] <- ft
     for (t in 2:size) {
-      ft <- A %*% ft + rnorm(n, 0, sigma)
+      ft <- A %*% ft + innov_sd * runit_noise(n)
       out[, t] <- ft
     }
     out
   }
+  
   mode_n_prod <- function(Tarr, Mmat, mode) {
     dims <- dim(Tarr)
     if (mode == 1) {
@@ -79,7 +87,9 @@ dgp_general <- function(
       tmp <- array(pm, c(nrow(Mmat), dims[1], dims[2]))
       return(aperm(tmp, c(2,3,1)))
     }
+    stop("mode must be 1/2/3.")
   }
+  
   apply_shift <- function(mat, num_idx, mu, sd) {
     if (is.null(num_idx) || length(num_idx) != 2) return(mat)
     rows <- sample(nrow(mat), num_idx[1])
@@ -88,7 +98,7 @@ dgp_general <- function(
     mat
   }
   
-  # Initialisation
+  # -------- initial loadings + factors --------
   loadings_current <- vector("list", M)
   for (m in seq_len(M)) {
     loadings_current[[m]] <- matrix(
@@ -96,12 +106,10 @@ dgp_general <- function(
       nrow = dim_obs[m]
     )
   }
-  cur_latent   <- dim_latent
+  cur_latent <- dim_latent
   final_latent <- dim_latent
   if (!is.null(add_factors)) {
-    for (j in seq_len(q_true)) {
-      final_latent <- final_latent + add_factors[[j]]
-    }
+    for (j in seq_len(q_true)) final_latent <- final_latent + add_factors[[j]]
   }
   
   if (M == 1) {
@@ -112,50 +120,39 @@ dgp_general <- function(
     Ft_full <- array(0, c(final_latent, Time))
   }
   
-  base    <- VAR1_vec(prod(dim_latent), Time, coeff)
+  base <- VAR1_vec(prod(dim_latent), Time, coeff)
   Ft_base <- array(base, c(dim_latent, Time))
-  
   if (M == 1) {
     Ft_full[1:dim_latent, ] <- Ft_base
   } else if (M == 2) {
     Ft_full[1:dim_latent[1], 1:dim_latent[2], ] <- Ft_base
   } else {
-    Ft_full[1:dim_latent[1],
-            1:dim_latent[2],
-            1:dim_latent[3],
-    ] <- Ft_base
+    Ft_full[1:dim_latent[1], 1:dim_latent[2], 1:dim_latent[3], ] <- Ft_base
   }
   
-  # Histories & noise
   loadings_hist <- vector("list", Time)
   Ft_hist <- vector("list", Time)
+  
   E <- switch(model,
-              vector = array(matrixvariate_normal(c(dim_obs,1), Time),
-                             c(dim_obs,1,Time)),
-              matrix = matrixvariate_normal(dim_obs, Time),
-              tensor = tensorvariate_normal(dim_obs, Time)
-  )
+              vector = array(matrixvariate_draw(c(dim_obs,1), Time), c(dim_obs,1,Time)),
+              matrix = matrixvariate_draw(dim_obs, Time),
+              tensor = matrixvariate_draw(dim_obs, Time))
   
   record_state <- function(t) {
     loadings_hist[[t]] <<- lapply(loadings_current, function(L) L)
-    
     if (M == 1) {
       Ft_hist[[t]] <<- Ft_full[1:cur_latent, t]
     } else if (M == 2) {
-      Ft_hist[[t]] <<- Ft_full[1:cur_latent[1],
-                               1:cur_latent[2],
-                               t]
+      Ft_hist[[t]] <<- Ft_full[1:cur_latent[1], 1:cur_latent[2], t]
     } else {
-      slice <- Ft_full[1:cur_latent[1],
-                       1:cur_latent[2],
-                       1:cur_latent[3],
-                       t]
+      slice <- Ft_full[1:cur_latent[1], 1:cur_latent[2], 1:cur_latent[3], t]
       Ft_hist[[t]] <<- array(slice, dim = cur_latent)
     }
   }
   
-  start_t <- 1
-  for (j in seq_len(q_true + 1)) {
+  # -------- iterate segments and apply changes --------
+  start_t <- 1L
+  for (j in seq_len(q_true + 1L)) {
     end_t <- if (j <= q_true) cps[j] else Time
     for (t in start_t:end_t) record_state(t)
     if (j > q_true) break
@@ -163,7 +160,7 @@ dgp_general <- function(
     modes_j <- type_mode[[j]]
     ops_j   <- type_change[[j]]
     
-    # Loading shifts / transforms
+    # (1) loading shifts / transforms
     if ("l" %in% ops_j) {
       for (m in modes_j) {
         if (!is.null(shift_ind)) {
@@ -174,25 +171,40 @@ dgp_general <- function(
             sqrt(shift_var[j])
           )
         }
-        if (!is.null(transform_list)) {
-          loadings_current[[m]] <- loadings_current[[m]] %*%
-            transform_list[[j]][[m]]
+        if (!is.null(transform_list) && length(transform_list) >= j) {
+          Tj <- transform_list[[j]]
+          if (!is.null(Tj) && length(Tj) >= m) {
+            Tjm <- Tj[[m]]
+            if (!is.null(Tjm)) {
+              Lm <- loadings_current[[m]]
+              if (is.function(Tjm)) Tjm <- Tjm(ncol(Lm))
+              Tjm <- as.matrix(Tjm)
+              if (!is.numeric(Tjm)) stop("Transform must be numeric.")
+              if (ncol(Lm) != nrow(Tjm)) {
+                stop(sprintf("Transform dim mismatch at cp %d, mode %d: ncol(L)=%d, nrow(T)=%d",
+                             j, m, ncol(Lm), nrow(Tjm)))
+              }
+              loadings_current[[m]] <- Lm %*% Tjm
+            }
+          }
         }
       }
     }
     
-    # Factor number changes
+    # (2) factor-number changes — add new factors
     if ("f" %in% ops_j) {
       for (m in modes_j) {
         k <- add_factors[[j]][m]
         if (k > 0) {
-          t0 <- cps[j] + 1
-          t1 <- if (j < q_true) cps[j+1] else Time
-          L  <- t1 - t0 + 1
-          prod_other <- prod(cur_latent[-m])
+          t0 <- cps[j] + 1L
+          t1 <- Time                 
+          L  <- t1 - t0 + 1L
+          
+          prod_other <- if (M == 1) 1L else prod(cur_latent[-m])
           raw <- VAR1_vec(k * prod_other, L, add_factors_coeff[[j]][m])
+          
           for (ii in seq_len(L)) {
-            idx <- t0 + ii - 1
+            idx <- t0 + ii - 1L
             if (M == 2) {
               if (m == 1) {
                 arr_n <- array(raw[, ii], c(k, cur_latent[2]))
@@ -204,9 +216,7 @@ dgp_general <- function(
               }
             }
             if (M == 3) {
-              sel1 <- seq_len(cur_latent[1])
-              sel2 <- seq_len(cur_latent[2])
-              sel3 <- seq_len(cur_latent[3])
+              sel1 <- seq_len(cur_latent[1]); sel2 <- seq_len(cur_latent[2]); sel3 <- seq_len(cur_latent[3])
               if (m == 1) {
                 arr_n <- array(raw[, ii], c(k, cur_latent[2], cur_latent[3]))
                 Ft_full[(cur_latent[1] + 1):(cur_latent[1] + k), sel2, sel3, idx] <- arr_n
@@ -221,38 +231,31 @@ dgp_general <- function(
               }
             }
           }
+          
+          # extend loadings to match the new factors and update rank
           loadings_current[[m]] <- cbind(
             loadings_current[[m]],
-            matrix(runif(dim_obs[m] * k, -2, 2), nrow = dim_obs[m]) # changed to U[-2,2]!!!!
+            matrix(runif(dim_obs[m] * k, -2, 2), nrow = dim_obs[m])
           )
           cur_latent[m] <- cur_latent[m] + k
         }
       }
     }
     
-    
-    start_t <- cps[j] + 1
-    
+    start_t <- cps[j] + 1L
   }
   
-  # Observations
+  # -------- observations --------
   if (idio) {
     X <- switch(model,
                 vector = {
                   mat <- matrix(0, dim_obs, Time)
-                  for (t in 1:Time) {
-                    mat[, t] <- loadings_hist[[t]][[1]] %*% Ft_hist[[t]] + E[,1,t]
-                  }
+                  for (t in 1:Time) mat[, t] <- loadings_hist[[t]][[1]] %*% Ft_hist[[t]] + E[,1,t]
                   mat
                 },
                 matrix = {
                   arr <- array(0, c(dim_obs, Time))
-                  for (t in 1:Time) {
-                    arr[,,t] <- loadings_hist[[t]][[1]] %*%
-                      Ft_hist[[t]] %*%
-                      t(loadings_hist[[t]][[2]]) +
-                      E[,,t]
-                  }
+                  for (t in 1:Time) arr[,,t] <- loadings_hist[[t]][[1]] %*% Ft_hist[[t]] %*% t(loadings_hist[[t]][[2]]) + E[,,t]
                   arr
                 },
                 tensor = {
@@ -266,22 +269,16 @@ dgp_general <- function(
                   arr
                 }
     )
-  } else{
+  } else {
     X <- switch(model,
                 vector = {
                   mat <- matrix(0, dim_obs, Time)
-                  for (t in 1:Time) {
-                    mat[, t] <- loadings_hist[[t]][[1]] %*% Ft_hist[[t]]
-                  }
+                  for (t in 1:Time) mat[, t] <- loadings_hist[[t]][[1]] %*% Ft_hist[[t]]
                   mat
                 },
                 matrix = {
                   arr <- array(0, c(dim_obs, Time))
-                  for (t in 1:Time) {
-                    arr[,,t] <- loadings_hist[[t]][[1]] %*%
-                      Ft_hist[[t]] %*%
-                      t(loadings_hist[[t]][[2]])
-                  }
+                  for (t in 1:Time) arr[,,t] <- loadings_hist[[t]][[1]] %*% Ft_hist[[t]] %*% t(loadings_hist[[t]][[2]])
                   arr
                 },
                 tensor = {
@@ -297,10 +294,5 @@ dgp_general <- function(
     )
   }
   
-  
-  list(
-    X = X,
-    Ft_hist = Ft_hist,
-    loadings_hist = loadings_hist
-  )
+  list(X = X, Ft_hist = Ft_hist, loadings_hist = loadings_hist)
 }
