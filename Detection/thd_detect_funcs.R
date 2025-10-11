@@ -70,8 +70,6 @@ info_record <- function(num_simu,
     true_cp <- theta
   } else if (setting == "s2") {
     r0 <- 3
-    C0 <- diag(r0)
-    C01 <- 5 * diag(r0)
     C1 <- matrix(rnorm(r0^2, sd = 1/sqrt(r0)), nrow = r0); C1[lower.tri(C1)] <- t(C1)[lower.tri(C1)]
     C2 <- matrix(c(1,0,0, 0,1,0, 0,0,0), 3, 3, byrow = TRUE)
     C3 <- matrix(0, 3, 3)
@@ -79,14 +77,12 @@ info_record <- function(num_simu,
     C3[3,1] <- rnorm(1); C3[3,2] <- rnorm(1); C3[3,3] <- 1.5
     
     transform_list <- list(
-      list(C0,  diag(3), diag(3)),
-      list(C01, diag(3), diag(3)),
       list(C1,  diag(3), diag(3)),
       list(diag(3), C3,  diag(3)),
       list(diag(3), diag(3), C2)
     )
-    type_mode   <- list(1,1,1,2,3)
-    type_change <- list("l","l","l","l","l")
+    type_mode   <- list(1,2,3)
+    type_change <- list("l","l","l")
     shift_ind <- shift_mean <- shift_var <- NULL
     add_factors <- add_factors_coeff <- NULL
     true_cp <- theta
@@ -131,8 +127,8 @@ info_record <- function(num_simu,
       X_t <- data_sim$X
       dim_X <- dim(X_t)[1:3]
       
-      est_load <- global_pca(X = X_t, dim_X = dim_X, centre = T, proj = TRUE)
-      #est_load <- global_pca(X = X_t, dim_X = dim_X, r_hat = c(3,3,3), centre = T, proj = TRUE)
+      #est_load <- global_pca(X = X_t, dim_X = dim_X, centre = T, proj = TRUE)
+      est_load <- global_pca(X = X_t, dim_X = dim_X, r_hat = c(3,3,3), centre = T, proj = TRUE)
       G <- est_load$G_proj
       G_dim <- as.vector(est_load$r_hat)
       
