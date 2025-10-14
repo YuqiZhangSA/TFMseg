@@ -64,9 +64,9 @@ simu_comparison <- function(method = c("TNotSBS", "FMseg", "LR"),
       C3[1,1] <- 0.5; C3[2,1] <- rnorm(1, 0, 1); C3[2,2] <- 1; 
       C3[3,1] <- rnorm(1, 0, 1); C3[3,2] <- rnorm(1, 0, 1); C3[3,3] <- 1.5
       transform_list <- list(
-        list(C1, diag(3), diag(3)),
-        list(diag(3), C3, diag(3)), 
-        list(diag(3), diag(3), C2)
+        list(C3, diag(3), diag(3)),
+        list(diag(3), C2, diag(3)), 
+        list(diag(3), diag(3), C1)
       )
       type_mode <- list(1, 2, 3)
       type_change <- list("l", "l", "l")
@@ -110,7 +110,19 @@ simu_comparison <- function(method = c("TNotSBS", "FMseg", "LR"),
       G_dim <- as.vector(r_hat)
     }
     
+    
+    scenarios <- list(
+      tensor_FMSeg  = list(freq = freq_mat_template, acc = acc_mat_template,
+                               cp_scaled = vector("list", nrep), time_sec = numeric(nrep)),
+      vec_FMSeg     = list(freq = freq_mat_template, acc = acc_mat_template,
+                               cp_scaled = vector("list", nrep), time_sec = numeric(nrep)),
+      vec_LR          = list(freq = freq_mat_template, acc = acc_mat_template,
+                               cp_scaled = vector("list", nrep), time_sec = numeric(nrep))
+    )
+    
     if (method == "TNotSBS") {
+      start_time <- Sys.time()
+      
       if (thd.type == "oracle") {
         out <- TNotSBS(G, G_dim, method = "oracle", m = 3, V.diag = V.diag, lrv = lrv)
       } else {  # fixed
@@ -123,15 +135,18 @@ simu_comparison <- function(method = c("TNotSBS", "FMseg", "LR"),
       }
       detected_cp <- out$est.cp %||% integer(0)
       
+      scenarios$tensor_FMSeg$time_sec[sim] <-
+        as.numeric(lubridate::as.period(Sys.time() - start_time, unit = "sec"))
+      scenarios$tensor_FMSeg <- add_outcome(scenarios$tensor_FMSeg, detected_cp, Time, theta, sim)
+      
+      
     } else if (method == "FMseg") {
       X_vec <- t(matrix(aperm(X, c(4, 1, 2, 3)), nrow = Time))   # p-by-T
       #r_vec <- round(median(abc.factor.number(X_vec)$r[4:6])) TOOOO slow!!!!!
       r_vec <- prod(G_dim)
       p_vec <- nrow(X_vec)
       lbd <- round(Time^(max(2/5, 1 - min(1, log(p_vec)/log(Time)))) * log(Time)^1.1)
-      #thd_vec <- max(exp(0.83126 * log(log(Time/lbd)) + 0.55101 * log((r_vec * (r_vec + 1) / 2))), 1.22968 * log(Time))
-      detected_cp <- NotSBS(x = X_vec, r = r_vec, m = 3, trim = trim, method = "oracle", lbd = lbd)$est.cp %||% integer(0)
-      
+      detected_cp <- FMSeg(x = X_vec, r = r_vec, m = 3, trim = trim, method = "oracle", lbd = lbd)$est.cp %||% integer(0)
     } else {  # LR
       Xd <- matrix(aperm(X, c(4, 1, 2, 3)), nrow = Time)
       detected_cp <- recurse_LR(Xd, tau1 = 0.2, offset = 0)$cps %||% integer(0)

@@ -76,10 +76,11 @@ info_record <- function(num_simu,
     C3[1,1] <- 0.5; C3[2,1] <- rnorm(1); C3[2,2] <- 1
     C3[3,1] <- rnorm(1); C3[3,2] <- rnorm(1); C3[3,3] <- 1.5
     
+    #132
     transform_list <- list(
-      list(C1,  diag(3), diag(3)),
-      list(diag(3), C3,  diag(3)),
-      list(diag(3), diag(3), C2)
+      list(C3,  diag(3), diag(3)),
+      list(diag(3), C2,  diag(3)),
+      list(diag(3), diag(3), C1)
     )
     type_mode   <- list(1,2,3)
     type_change <- list("l","l","l")
@@ -127,8 +128,8 @@ info_record <- function(num_simu,
       X_t <- data_sim$X
       dim_X <- dim(X_t)[1:3]
       
-      #est_load <- global_pca(X = X_t, dim_X = dim_X, centre = T, proj = TRUE)
-      est_load <- global_pca(X = X_t, dim_X = dim_X, r_hat = c(3,3,3), centre = T, proj = TRUE)
+      est_load <- global_pca(X = X_t, dim_X = dim_X, centre = T, proj = TRUE)
+      #est_load <- global_pca(X = X_t, dim_X = dim_X, r_hat = c(3,3,3), centre = T, proj = TRUE)
       G <- est_load$G_proj
       G_dim <- as.vector(est_load$r_hat)
       
