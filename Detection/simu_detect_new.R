@@ -164,7 +164,8 @@ simu_comparison <- function(method = c("TNotSBS", "FMseg", "LR"),
       start_time <- Sys.time()
       
       Xd <- matrix(aperm(X, c(4, 1, 2, 3)), nrow = Time)
-      detected_cp <- recurse_LR(Xd, tau1 = 0.2, offset = 0)$cps %||% integer(0)
+      #detected_cp <- recurse_LR(Xd, tau1 = 0.2, offset = 0)$cps %||% integer(0)
+      detected_cp <- recurse_LR(Xd, tau1 = min(diff(theta_coef)), offset = 0)$cps %||% integer(0)
       detected_cp <- sort(detected_cp)
       
       end_time <- Sys.time()
