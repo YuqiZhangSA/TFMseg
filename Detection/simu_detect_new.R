@@ -167,7 +167,7 @@ simu_comparison <- function(method = c("TNotSBS", "FMseg", "LR"),
       #detected_cp <- recurse_LR(Xd, tau1 = 0.2, offset = 0)$cps %||% integer(0)
       #detected_cp <- recurse_LR(Xd, tau1 = min(diff(theta_coef)), offset = 0)$cps %||% integer(0)
       #detected_cp <- sort(detected_cp)
-      lr_out <- bs_LR_globaltrim(Xd, tau_global = min(diff(theta_coef)), min_size= round(min(diff(theta_coef))*Time), 
+      lr_out <- bs_LR_globaltrim(Xd, tau_global = min(diff(theta_coef)), min_size= round(min(diff(theta_coef))*Time), #min_size= trim,
                                  r_est = NULL, tau_for_cv = 0.1)
       detected_cp <- (lr_out$cps %||% integer(0))
       detected_cp <- if (length(detected_cp)) sort(unique(detected_cp)) else integer(0)
