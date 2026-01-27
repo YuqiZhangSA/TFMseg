@@ -43,21 +43,20 @@ cand_sbs <- function(G, G_dim,
                      V.diag = TRUE,
                      lrv = TRUE,
                      n = NULL,
-                     lbd = NULL,
+                     #lbd = NULL,
                      single = FALSE) {
   
   K <- length(G_dim) # how many mode
   Time <- dim(G)[K + 1]
   
-  if (is.null(trim)) trim <- 2 * round(log(Time))
+  if (is.null(trim)) trim <- 3 * round(log(Time))
   trim <- as.integer(trim);  stopifnot(trim >= 0)
   if (is.null(n)) n <- floor(Time^0.25)
   
   if (single) {
     intervals <- data.frame(st = 0, ed = Time)
   } else {
-    if (is.null(lbd)) lbd <- round(6 * log(Time))
-    intervals <- seeded_intervals(Time, minl = lbd)
+    intervals <- seeded_intervals(Time = Time, minl = floor(0.5*Time/log(Time)))
   }
   
   # for each unfolding
@@ -127,128 +126,128 @@ cand_sbs <- function(G, G_dim,
   cands
 }
 
-# With NOT Principle
-TNotSBS <- function(G, G_dim,
-                    trim = round(2 * log(dim(G)[length(G_dim) + 1])),
-                    method = c("fixed", "oracle"),
-                    threshold = NULL,
-                    m = NULL,
-                    V.diag = TRUE,
-                    lrv = TRUE,
-                    n = NULL,
-                    lbd = NULL,
-                    single = FALSE) {
-  
-  method <- match.arg(method)
-  
-  # get all candidate intervals
-  cands <- cand_sbs(G, G_dim,
-                    trim = trim,
-                    V.diag = V.diag,
-                    lrv = lrv,
-                    n = n,
-                    lbd = lbd,
-                    single = single)
-  
-  # sort by interval length
-  cands <- cands[order(cands$ed - cands$st), ]
-  st_vec <- cands$st
-  ed_vec <- cands$ed
-  cp_vec <- cands$est.cp
-  val_vec <- cands$val
-  
-  if (method == "fixed") {
-    
-    if (is.null(threshold))
-      stop("Must supply 'threshold' in fixed mode.")
-    
-    avail <- which(val_vec >= threshold + 5e-3)
-    sel <- integer(0)
-    
-    while (length(avail) > 0) {
-      k <- avail[1]
-      sel <- c(sel, k)
-      
-      avail <- avail[-1]
-      overlap <- st_vec[avail] < cp_vec[k] & ed_vec[avail] >= cp_vec[k]
-      if (any(overlap)) 
-        avail <- avail[!overlap]
-    }
-    
-    res <- cands[sel, , drop = FALSE]
-    res <- res[order(res$est.cp), , drop = FALSE]
-    rownames(res) <- NULL
-    
-  } else {
-    ## oracle method
-    if (is.null(m))
-      stop("Must supply 'm' in oracle method.")
-    
-    thds <- sort(unique(val_vec), decreasing = TRUE)
-    sel <- NULL
-    chosen_th <- NA
-    
-    # find the smallest threshold giving m non‐overlapping intervals
-    for (thd in thds) {
-      avail <- which(val_vec >= thd)
-      sel_tmp <- integer(0)
-      
-      while (length(sel_tmp) < m && length(avail) > 0) {
-        k <- avail[1]
-        sel_tmp <- c(sel_tmp, k)
-        
-        avail <- avail[-1]
-        overlap <- st_vec[avail] < cp_vec[k] & ed_vec[avail] >= cp_vec[k]
-        if (any(overlap)) 
-          avail <- avail[!overlap]
-      }
-      
-      if (length(sel_tmp) == m) {
-        sel <- sel_tmp
-        chosen_th <- thd
-        break
-      }
-    }
-    
-    if (is.null(sel))
-      stop(sprintf("Cannot find threshold yielding m = %d", m))
-    
-    res <- cands[sel, , drop = FALSE]
-    res <- res[order(res$est.cp), , drop = FALSE]
-    
-    # record selected and no‐change thresholds -- largest
-    res$selected_threshold <- chosen_th
-    res$no_change_threshold <- max(val_vec, na.rm = TRUE)
-    
-    # compute next_highest_threshold
-    next_highest_threshold <- NULL
-    Time <- dim(G)[ length(G_dim) + 1 ]
-    S <- res$est.cp
-    idx_chosen <- which(thds == chosen_th)[1]
-    
-    for (j in seq.int(idx_chosen + 1, length(thds))) {
-      candidate_thd <- thds[j]
-      cand_idxs <- which(val_vec == candidate_thd)
-      found <- FALSE
-      
-      for (k in cand_idxs) {
-        st <- st_vec[k]
-        ed <- ed_vec[k]
-        if (all(S - st < log(Time) | ed - S < log(Time))) {
-          next_highest_threshold <- candidate_thd
-          found <- TRUE
-          break
-        }
-      }
-      if (found) break
-    }
-    
-    res$next_highest_threshold <- next_highest_threshold
-    rownames(res) <- NULL
-  }
-  
-  return(res)
-}
+# # With NOT Principle
+# TFMseg <- function(G, G_dim,
+#                     trim = round(0.25 * dim(G)[length(G_dim) + 1] / log(dim(G)[length(G_dim) + 1])),
+#                     method = c("fixed", "oracle"),
+#                     threshold = NULL,
+#                     m = NULL,
+#                     V.diag = TRUE,
+#                     lrv = TRUE,
+#                     n = NULL,
+#                     #lbd = NULL,
+#                     single = FALSE) {
+#   
+#   method <- match.arg(method)
+#   
+#   # get all candidate intervals
+#   cands <- cand_sbs(G, G_dim,
+#                     trim = trim,
+#                     V.diag = V.diag,
+#                     lrv = lrv,
+#                     n = n,
+#                     #lbd = lbd,
+#                     single = single)
+#   
+#   # sort by interval length
+#   cands <- cands[order(cands$ed - cands$st), ]
+#   st_vec <- cands$st
+#   ed_vec <- cands$ed
+#   cp_vec <- cands$est.cp
+#   val_vec <- cands$val
+#   
+#   if (method == "fixed") {
+#     
+#     if (is.null(threshold))
+#       stop("Must supply 'threshold' in fixed mode.")
+#     
+#     avail <- which(val_vec >= threshold + 5e-3)
+#     sel <- integer(0)
+#     
+#     while (length(avail) > 0) {
+#       k <- avail[1]
+#       sel <- c(sel, k)
+#       
+#       avail <- avail[-1]
+#       overlap <- st_vec[avail] < cp_vec[k] & ed_vec[avail] >= cp_vec[k]
+#       if (any(overlap)) 
+#         avail <- avail[!overlap]
+#     }
+#     
+#     res <- cands[sel, , drop = FALSE]
+#     res <- res[order(res$est.cp), , drop = FALSE]
+#     rownames(res) <- NULL
+#     
+#   } else {
+#     ## oracle method
+#     if (is.null(m))
+#       stop("Must supply 'm' in oracle method.")
+#     
+#     thds <- sort(unique(val_vec), decreasing = TRUE)
+#     sel <- NULL
+#     chosen_th <- NA
+#     
+#     # find the smallest threshold giving m non‐overlapping intervals
+#     for (thd in thds) {
+#       avail <- which(val_vec >= thd)
+#       sel_tmp <- integer(0)
+#       
+#       while (length(sel_tmp) < m && length(avail) > 0) {
+#         k <- avail[1]
+#         sel_tmp <- c(sel_tmp, k)
+#         
+#         avail <- avail[-1]
+#         overlap <- st_vec[avail] < cp_vec[k] & ed_vec[avail] >= cp_vec[k]
+#         if (any(overlap)) 
+#           avail <- avail[!overlap]
+#       }
+#       
+#       if (length(sel_tmp) == m) {
+#         sel <- sel_tmp
+#         chosen_th <- thd
+#         break
+#       }
+#     }
+#     
+#     if (is.null(sel))
+#       stop(sprintf("Cannot find threshold yielding m = %d", m))
+#     
+#     res <- cands[sel, , drop = FALSE]
+#     res <- res[order(res$est.cp), , drop = FALSE]
+#     
+#     # record selected and no‐change thresholds -- largest
+#     res$selected_threshold <- chosen_th
+#     res$no_change_threshold <- max(val_vec, na.rm = TRUE)
+#     
+#     # compute next_highest_threshold
+#     next_highest_threshold <- NULL
+#     Time <- dim(G)[ length(G_dim) + 1 ]
+#     S <- res$est.cp
+#     idx_chosen <- which(thds == chosen_th)[1]
+#     
+#     for (j in seq.int(idx_chosen + 1, length(thds))) {
+#       candidate_thd <- thds[j]
+#       cand_idxs <- which(val_vec == candidate_thd)
+#       found <- FALSE
+#       
+#       for (k in cand_idxs) {
+#         st <- st_vec[k]
+#         ed <- ed_vec[k]
+#         if (all(S - st < log(Time) | ed - S < log(Time))) {
+#           next_highest_threshold <- candidate_thd
+#           found <- TRUE
+#           break
+#         }
+#       }
+#       if (found) break
+#     }
+#     
+#     res$next_highest_threshold <- next_highest_threshold
+#     rownames(res) <- NULL
+#   }
+#   
+#   return(res)
+# }
 
 
 
@@ -285,96 +284,96 @@ compute_next_threshold <- function(current_threshold, S, thds, all_results, Time
 
 
 
-TNotSBS <- function(G, G_dim,
-                    trim = round(2 * log(dim(G)[length(G_dim) + 1])),
+TFMseg <- function(G, G_dim,
+                    trim = round(0.25 * dim(G)[length(G_dim) + 1] / log(dim(G)[length(G_dim) + 1])),
                     method = c("fixed", "oracle"),
                     threshold = NULL,
                     m = NULL,
                     V.diag = TRUE,
                     lrv = TRUE,
                     n = NULL,
-                    lbd = NULL,
+                    #lbd = NULL,
                     single = FALSE) {
-  
+
   method <- match.arg(method)
-  
+
   # get all candidate intervals
   cands <- cand_sbs(G, G_dim,
                     trim = trim,
                     V.diag = V.diag,
                     lrv = lrv,
                     n = n,
-                    lbd = lbd,
+                    #lbd = lbd,
                     single = single)
-  
+
   # sort by interval length
   cands <- cands[order(cands$ed - cands$st), ]
   st_vec <- cands$st
   ed_vec <- cands$ed
   cp_vec <- cands$est.cp
   val_vec <- cands$val
-  
+
   if (method == "fixed") {
-    
+
     if (is.null(threshold))
       stop("Must supply 'threshold' in fixed mode.")
-    
+
     avail <- which(val_vec >= threshold + 5e-3)
     sel <- integer(0)
-    
+
     while (length(avail) > 0) {
       k <- avail[1]
       sel <- c(sel, k)
       avail <- avail[-1]
       overlap <- st_vec[avail] < cp_vec[k] & ed_vec[avail] >= cp_vec[k]
-      if (any(overlap)) 
+      if (any(overlap))
         avail <- avail[!overlap]
     }
-    
+
     res <- cands[sel, , drop = FALSE]
     res <- res[order(res$est.cp), , drop = FALSE]
     rownames(res) <- NULL
-    
+
   } else if (method == "oracle") {
-    
+
     if (is.null(m))
       stop("Must supply 'm' in oracle method.")
-    
+
     thds <- sort(unique(val_vec), decreasing = TRUE)
     sel <- NULL
     chosen_th <- NA
-    
+
     # find the smallest threshold giving m non‐overlapping intervals
     for (thd in thds) {
       avail <- which(val_vec >= thd)
       sel_tmp <- integer(0)
-      
+
       while (length(sel_tmp) < m && length(avail) > 0) {
         k <- avail[1]
         sel_tmp <- c(sel_tmp, k)
         avail <- avail[-1]
         overlap <- st_vec[avail] < cp_vec[k] & ed_vec[avail] >= cp_vec[k]
-        if (any(overlap)) 
+        if (any(overlap))
           avail <- avail[!overlap]
       }
-      
+
       if (length(sel_tmp) == m) {
         sel <- sel_tmp
         chosen_th <- thd
         break
       }
     }
-    
+
     if (is.null(sel))
       stop(sprintf("Cannot find threshold yielding m = %d", m))
-    
+
     res <- cands[sel, , drop = FALSE]
     res <- res[order(res$est.cp), , drop = FALSE]
-    
+
     # record selected and no‐change thresholds -- largest
     res$selected_threshold  <- chosen_th
     res$no_change_threshold <- max(val_vec, na.rm = TRUE)
-    
+
     Time <- dim(G)[ length(G_dim) + 1 ]
     S <- res$est.cp
     all_results <- cands[, c("st","ed","val")]
@@ -385,9 +384,9 @@ TNotSBS <- function(G, G_dim,
       all_results = all_results,
       Time = Time
     )
-    
+
     rownames(res) <- NULL
   }
-  
+
   return(res)
 }

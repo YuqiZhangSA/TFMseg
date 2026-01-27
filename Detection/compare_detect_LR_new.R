@@ -354,3 +354,5 @@ bs_LR_globaltrim <- function(X, tau_global = 0.1, min_size = 20, r_est = NULL,
   list(n = length(cps), cps = sort(unique(as.integer(cps))), min_gap = min_gap, r_est = r_est)
 }
 
+
+

@@ -27,7 +27,7 @@
 #'
 #' @export
 
-seeded_intervals <- function(n, a = (1/2)^(1), minl = 2) {
+seeded_intervals_general <- function(n, a = (1/2)^(1), minl = 2) {
   if (n < 3) stop("n should be at least 3")
   if (a < 0.5 || a >= 1) stop("Decay parameter 'a' must be in [1/2, 1)")
 

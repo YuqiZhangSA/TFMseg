@@ -1,4 +1,4 @@
-TNotSBS_simu <- function(
+TFMseg_simu <- function(
     nrep = 50,
     data_setting = c("s1","s2"),
     Time_list = c(400, 600, 800, 1000),
@@ -86,13 +86,13 @@ TNotSBS_simu <- function(
         G_dim <- as.vector(est_load$r_hat)
         #print(G_dim)
         if (method == "oracle") {
-          out <- TNotSBS(G, G_dim, method = c("oracle"), m = 3, V.diag = TRUE, lrv = TRUE)
+          out <- TFMseg(G, G_dim, method = c("oracle"), m = 3, V.diag = TRUE, lrv = TRUE)
         } else if (method == "fixed"){
           dr <- sum(G_dim * (G_dim + 1) / 2)
           int_len <- round(6*log(Time))
           thd <- pmax(exp(threshold_coef[1] * log(log(Time/int_len)) + threshold_coef[2] * log(dr)),
                       threshold_coef[3] * log(Time))
-          out <- TNotSBS(G, G_dim, method = c("fixed"), threshold = thd, V.diag = TRUE, lrv = TRUE)
+          out <- TFMseg(G, G_dim, method = c("fixed"), threshold = thd, V.diag = TRUE, lrv = TRUE)
         }
         sort(out$est.cp)
       }, future.seed = TRUE)
@@ -100,11 +100,11 @@ TNotSBS_simu <- function(
       key <- paste("Time", Time, "dim", paste(dim_obs, collapse = "_"), sep = "_")
       
       grDevices::dev.new(noRStudioGD = TRUE)
-      visualise_stats(detected_cp_list, true_cp, Time, method_name = paste0("TNotSBS-oracle (", key, ")"))
+      visualise_stats(detected_cp_list, true_cp, Time, method_name = paste0("TFMseg-oracle (", key, ")"))
       fig <- grDevices::recordPlot()
       grDevices::dev.off()
       
-      stats <- compute_stats(Time, true_cp, detected_cp_list, method_name = paste0("TNotSBS-oracle (", key, ")"))
+      stats <- compute_stats(Time, true_cp, detected_cp_list, method_name = paste0("TFMseg-oracle (", key, ")"))
       
       results[[key]] <- list(
         Time = Time,

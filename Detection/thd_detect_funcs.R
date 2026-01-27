@@ -1,8 +1,8 @@
 info_record <- function(num_simu, 
                         seed_start = 888, 
                         Time, 
-                        dim_obs = c(20, 20, 20),
-                        dim_latent  = c(2, 2, 2),
+                        dim_obs = c(10,10,10),
+                        dim_latent  = c(3,3,3),
                         dist = "Gaussian",
                         setting = c("s0", "s1", "s2"), # s0 for no change
                         theta_coef = NULL, 
@@ -20,8 +20,8 @@ info_record <- function(num_simu,
   if (is.null(theta_coef)) {theta_coef <- c(0.25,0.5,0.75)}
   theta <- c(floor(Time * theta_coef[1]), floor(Time * theta_coef[2]), floor(Time * theta_coef[3]))
   m <- length(theta_coef)
-  if (is.null(lbd)) lbd <-  round(6 * log(Time))
-  if (is.null(trim)) trim <- round(2 * log(Time))
+  if (is.null(trim)) trim <- floor(0.25 * Time / log(Time))
+  if (is.null(lbd)) lbd <-  floor(0.5 * Time / log(Time))
   
   # Define settings
   if (setting == "s1") {
@@ -76,7 +76,6 @@ info_record <- function(num_simu,
     C3[1,1] <- 0.5; C3[2,1] <- rnorm(1); C3[2,2] <- 1
     C3[3,1] <- rnorm(1); C3[3,2] <- rnorm(1); C3[3,3] <- 1.5
     
-    #132
     transform_list <- list(
       list(C3,  diag(3), diag(3)),
       list(diag(3), C2,  diag(3)),
@@ -128,12 +127,12 @@ info_record <- function(num_simu,
       X_t <- data_sim$X
       dim_X <- dim(X_t)[1:3]
       
-      est_load <- global_pca(X = X_t, dim_X = dim_X, centre = T, proj = TRUE)
-      #est_load <- global_pca(X = X_t, dim_X = dim_X, r_hat = c(3,3,3), centre = T, proj = TRUE)
+      #est_load <- global_pca(X = X_t, dim_X = dim_X, centre = T, proj = TRUE)
+      est_load <- global_pca(X = X_t, dim_X = dim_X, r_hat = c(3,3,3), centre = T, proj = TRUE)
       G <- est_load$G_proj
       G_dim <- as.vector(est_load$r_hat)
       
-      out <- TNotSBS(G = G, G_dim = G_dim, method = c("oracle"), m = m, V.diag = V.diag, lrv = lrv)
+      out <- TFMseg(G = G, G_dim = G_dim, method = c("oracle"), m = m, V.diag = V.diag, lrv = lrv)
       est_cp <- sort(out$est.cp)
       detected_cp_list[[sim]] <- est_cp
     
@@ -171,8 +170,8 @@ info_record <- function(num_simu,
 quantile_record <- function(num_simu, 
                             seed_start = 888, 
                             Time, 
-                            dim_obs = c(20, 20, 20),
-                            dim_latent  = c(2, 2, 2),
+                            dim_obs = c(10,10,10),
+                            dim_latent  = c(3,3,3),
                             dist = "Gaussian",
                             setting = c("s0", "s1", "s2"), # s0 for no change
                             theta_coef, 

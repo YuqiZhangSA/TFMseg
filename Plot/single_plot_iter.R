@@ -1,4 +1,4 @@
-plot_NotSBS_iterations <- function(results, Time, m = 3, trim, threshold = NULL, method = c("oracle", "fixed"), theta_coef = c(0.25,0.5,0.75) ){
+plot_FMseg_iterations <- function(results, Time, m = 3, trim, threshold = NULL, method = c("oracle", "fixed"), theta_coef = c(0.25,0.5,0.75) ){
   #true_cp <- floor(Time * 1:m / (m + 1))
   true_cp <- c(floor(Time * theta_coef[1]), floor(Time * theta_coef[2]), floor(Time * theta_coef[3]))
   method <- match.arg(method, c("fixed", "oracle", "auto"))
