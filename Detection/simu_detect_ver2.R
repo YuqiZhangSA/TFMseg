@@ -268,7 +268,7 @@ simu_comparison <- function(method = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
         if (is.null(threshold_coef) || length(threshold_coef) < 3)
           stop("For thd.type = 'fixed', provide threshold_coef of length 3.")
         thd <- pmax(
-          exp(threshold_coef[1] * log(log(Time)) + threshold_coef[2] * log(dr)),
+          exp(threshold_coef[1] * log(log(log(Time))) + threshold_coef[2] * log(dr)),
           threshold_coef[3] * log(Time)
         )
         out <- TFMseg(G, G_dim,
@@ -304,7 +304,7 @@ simu_comparison <- function(method = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
                      method = "oracle",
                      m = m_true,
                      V.diag = V.diag,
-                     lrv = lrv) #check if works for vector
+                     lrv = lrv) 
       
       detected_cp <- out$est.cp %||% integer(0)
       
