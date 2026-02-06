@@ -84,7 +84,7 @@ simu_comparison <- function(method = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
     stop("For s3–s6 please set theta_coef to a single value, e.g. theta_coef = 0.5.")
   }
   
-  trim <- round(trim_coef * (Time / log(Time)))
+  trim <- floor(trim_coef * (Time / log(Time)))
   
   frequency_table <- matrix(0L, nrow = nrep, ncol = 5L)
   accuracy_count <- if (length(theta)) matrix(0L, nrep, length(theta)) else matrix(NA_real_, nrep, 0L)
@@ -267,10 +267,9 @@ simu_comparison <- function(method = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
         dr <- sum(G_dim * (G_dim + 1L) / 2L)
         if (is.null(threshold_coef) || length(threshold_coef) < 3)
           stop("For thd.type = 'fixed', provide threshold_coef of length 3.")
-        thd <- pmax(
-          exp(threshold_coef[1] * log(log(log(Time))) + threshold_coef[2] * log(dr)),
-          threshold_coef[3] * log(Time)
-        )
+        thd <- exp(threshold_coef[1] * log(log(log(Time))) 
+                   + threshold_coef[2] * log(dr) + threshold_coef[3]) 
+        
         out <- TFMseg(G, G_dim,
                        method = "fixed",
                        threshold = thd,
