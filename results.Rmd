@@ -19,7 +19,7 @@ for (d in dirs) {
 # Detection results
 
 ```{r}
-Ts <- c(400, 800, 1600, 3200)[1]
+Ts <- c(400, 800, 1600, 3200)[2]
 
 dim_obs_list <- list(c(10, 10, 10), c(20, 20, 20), c(10, 20, 40), c(10, 10, 100))[1]
 
@@ -51,7 +51,7 @@ multi_hist(
 
 
 ```{r}
-tab_2 <- simu_ret(methods = c("TFMseg", "LR")[1], 
+tab_2 <- simu_ret(methods = c("TFMseg", "LR"), 
                   simu_set_detect = simulation_settings,
                   data_setting = "s1", dep = TRUE, theta_coef = c(0.25,0.5,0.75), r_hat = NULL)
 tab_2$table

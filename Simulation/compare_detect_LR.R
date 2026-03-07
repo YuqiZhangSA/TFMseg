@@ -189,20 +189,29 @@ simbrownian_v <- function(t, n, dim) {
 
 cv_cache <- list()
 
-critical_value4_lr_HAC_m <- function(F_hat, tau1) {
-  Tn <- nrow(F_hat); r0 <- ncol(F_hat)
+critical_value4_lr_HAC_m <- function(F_hat, tau1, seed = NULL) {
+  if (!is.null(seed)) set.seed(seed)
+  
+  Tn <- nrow(F_hat)
+  r0 <- ncol(F_hat)
   
   FF_I <- matrix(0, nrow = Tn, ncol = r0^2)
-  for (t in 1:Tn) {
-    M <- tcrossprod(F_hat[t,]) - diag(r0)
+  for (t in seq_len(Tn)) {
+    M <- tcrossprod(F_hat[t, ]) - diag(r0)
     FF_I[t, ] <- as.vector(M)
   }
-  Omega_hat <- HAC_NW94_new1(FF_I, rep(1, Tn), cons = 0, kernel = 1, a = 4, pw = 0, p_min = 1, p_max = 1, m = 1.5)
+  
+  Omega_hat <- HAC_NW94_new1(
+    FF_I, rep(1, Tn),
+    cons = 0, kernel = 1, a = 4, pw = 0,
+    p_min = 1, p_max = 1, m = 1.5
+  )
   
   n <- 2000
   niter <- 1000
   result <- numeric(niter)
   j_range <- round(tau1 * n):round((1 - tau1) * n)
+  
   for (i in seq_len(niter)) {
     W <- simbrownian_v(1, n, r0^2)
     LR <- rep(NA_real_, n)
@@ -212,22 +221,23 @@ critical_value4_lr_HAC_m <- function(F_hat, tau1) {
     }
     result[i] <- max(LR[j_range], na.rm = TRUE)
   }
+  
   result_sort <- sort(result)
   idx <- c(floor(0.90 * niter), floor(0.95 * niter), floor(0.99 * niter))
-  cv <- result_sort[idx]
-  as.numeric(cv)
+  as.numeric(result_sort[idx])
 }
 
-critical_value4_lr_HAC_m_cached <- function(F_hat, tau1) {
+critical_value4_lr_HAC_m_cached <- function(F_hat, tau1, seed = NULL) {
   r0 <- ncol(F_hat)
-  key <- paste0("r", r0)
+  key <- paste0("r", r0, "_tau", tau1, "_seed", if (is.null(seed)) "NULL" else seed)
+  
   if (!is.null(cv_cache[[key]])) {
     return(cv_cache[[key]])
-  } else {
-    cv <- critical_value4_lr_HAC_m(F_hat, tau1)
-    cv_cache[[key]] <<- cv
-    return(cv)
   }
+  
+  cv <- critical_value4_lr_HAC_m(F_hat, tau1, seed = seed)
+  cv_cache[[key]] <<- cv
+  cv
 }
 
 # New: global-trim BS for LR
@@ -251,11 +261,15 @@ logdet_safe <- function(S, eps = 1e-6) {
 }
 
 LR_globaltrim_once <- function(X, s, e, min_gap, r_est,
-                               tau_for_cv = 0.1, eps_ridge = 1e-6) {
-  Tn <- nrow(X); N <- ncol(X)
+                               tau_for_cv = 0.1, eps_ridge = 1e-6,
+                               seed = NULL) {
+  Tn <- nrow(X)
+  N <- ncol(X)
+  
   if ((e - s + 1) < 2 * min_gap + 1) {
     return(list(reject = 0L, k_hat = NA_integer_, lr = -Inf))
   }
+  
   k_lo <- s + min_gap
   k_hi <- e - min_gap
   
@@ -280,33 +294,37 @@ LR_globaltrim_once <- function(X, s, e, min_gap, r_est,
   best_val <- Inf
   best_k_local <- NA_integer_
   for (k_local in idx_lo:idx_hi) {
-    k <- k_local
-    S1 <- crossprod(F_hat[1:k, , drop = FALSE]) / k
-    S2 <- crossprod(F_hat[(k + 1):Tseg, , drop = FALSE]) / (Tseg - k)
-    v <- k * logdet_safe(S1, eps_ridge) + (Tseg - k) * logdet_safe(S2, eps_ridge)
+    S1 <- crossprod(F_hat[1:k_local, , drop = FALSE]) / k_local
+    S2 <- crossprod(F_hat[(k_local + 1):Tseg, , drop = FALSE]) / (Tseg - k_local)
+    v <- k_local * logdet_safe(S1, eps_ridge) + (Tseg - k_local) * logdet_safe(S2, eps_ridge)
     if (v < best_val) {
       best_val <- v
       best_k_local <- k_local
     }
   }
+  
   k_hat_global <- s - 1L + best_k_local
   
   S1 <- crossprod(F_hat[1:best_k_local, , drop = FALSE]) / best_k_local
   S2 <- crossprod(F_hat[(best_k_local + 1):Tseg, , drop = FALSE]) / (Tseg - best_k_local)
   S0 <- crossprod(F_hat) / Tseg
+  
   LR_stat <- Tseg * logdet_safe(S0, eps_ridge) -
     best_k_local * logdet_safe(S1, eps_ridge) -
     (Tseg - best_k_local) * logdet_safe(S2, eps_ridge)
   
-  cv <- critical_value4_lr_HAC_m_cached(F_hat, tau_for_cv)
-  reject <- as.integer(LR_stat > cv[2])  # 5%
+  cv <- critical_value4_lr_HAC_m_cached(F_hat, tau_for_cv, seed = seed)
+  reject <- as.integer(LR_stat > cv[2])
+  
   list(reject = reject, k_hat = k_hat_global, lr = LR_stat)
 }
 
 bs_LR_globaltrim <- function(X, tau_global = 0.1, min_size = 20, r_est = NULL,
-                             tau_for_cv = 0.1, max_cps = NULL, eps_ridge = 1e-6) {
+                             tau_for_cv = 0.1, max_cps = NULL, eps_ridge = 1e-6,
+                             seed = NULL) {
   Tn <- nrow(X)
   min_gap <- max(1L, floor(tau_global * Tn))
+  
   if (is.null(r_est)) r_est <- estimate_r_global(X, kmax = 10, ic_col = 1)
   if (is.null(max_cps)) {
     max_cps <- max(0L, floor((Tn - 1) / min_gap) - 1L)
@@ -317,25 +335,42 @@ bs_LR_globaltrim <- function(X, tau_global = 0.1, min_size = 20, r_est = NULL,
   lr_at_cp <- numeric(0)
   
   while (length(seg_stack) > 0 && length(cps) < max_cps) {
-    seg <- seg_stack[[length(seg_stack)]]; seg_stack <- seg_stack[-length(seg_stack)]
-    s <- seg[1]; e <- seg[2]
+    seg <- seg_stack[[length(seg_stack)]]
+    seg_stack <- seg_stack[-length(seg_stack)]
+    
+    s <- seg[1]
+    e <- seg[2]
+    
     if ((e - s + 1) < max(min_size, 2 * min_gap + 1)) next
     
-    res <- LR_globaltrim_once(X, s, e, min_gap, r_est, tau_for_cv = tau_for_cv, eps_ridge = eps_ridge)
+    res <- LR_globaltrim_once(
+      X, s, e, min_gap, r_est,
+      tau_for_cv = tau_for_cv,
+      eps_ridge = eps_ridge,
+      seed = seed
+    )
+    
     if (res$reject == 1L && !is.na(res$k_hat)) {
       k <- res$k_hat
       if (length(cps) == 0 || all(abs(k - cps) >= min_gap)) {
         cps <- c(cps, k)
         lr_at_cp <- c(lr_at_cp, res$lr)
-        if ((k - s + 1) >= max(min_size, 2 * min_gap + 1)) seg_stack[[length(seg_stack) + 1]] <- c(s, k)
-        if ((e - k) >= max(min_size, 2 * min_gap + 1)) seg_stack[[length(seg_stack) + 1]] <- c(k + 1L, e)
+        
+        if ((k - s + 1) >= max(min_size, 2 * min_gap + 1)) {
+          seg_stack[[length(seg_stack) + 1]] <- c(s, k)
+        }
+        if ((e - k) >= max(min_size, 2 * min_gap + 1)) {
+          seg_stack[[length(seg_stack) + 1]] <- c(k + 1L, e)
+        }
       }
     }
   }
   
   if (length(cps) > 1) {
     o <- order(cps)
-    cps <- cps[o]; lr_at_cp <- lr_at_cp[o]
+    cps <- cps[o]
+    lr_at_cp <- lr_at_cp[o]
+    
     keep <- rep(TRUE, length(cps))
     i <- 1
     while (i < length(cps)) {
@@ -344,14 +379,20 @@ bs_LR_globaltrim <- function(X, tau_global = 0.1, min_size = 20, r_est = NULL,
       if (j - i > 1) {
         block <- i:(j - 1)
         best <- block[which.max(lr_at_cp[block])]
-        keep[block] <- FALSE; keep[best] <- TRUE
+        keep[block] <- FALSE
+        keep[best] <- TRUE
       }
       i <- j
     }
     cps <- cps[keep]
   }
   
-  list(n = length(cps), cps = sort(unique(as.integer(cps))), min_gap = min_gap, r_est = r_est)
+  list(
+    n = length(cps),
+    cps = sort(unique(as.integer(cps))),
+    min_gap = min_gap,
+    r_est = r_est
+  )
 }
 
 

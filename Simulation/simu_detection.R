@@ -379,9 +379,10 @@ simu_comparison <- function(method = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
       
       lr_out <- bs_LR_globaltrim(
         Xd,
-        tau_global = min(diff(theta_coef)),
+        tau_global = 0.1, #min(diff(theta_coef))
         min_size = min_size,
-        r_est = NULL
+        r_est = NULL,
+        seed = seed_start + sim
       )
       
       detected_cp <- lr_out$cps %||% integer(0)
