@@ -19,6 +19,7 @@
 #' @param dist Character; "Gaussian" or "heavy" (t_7 rescaled to var 1).
 #'
 #' @return list(X, Ft_hist, loadings_hist)
+
 dgp_general <- function(
     model = c("vector", "matrix", "tensor"),
     dim_obs,

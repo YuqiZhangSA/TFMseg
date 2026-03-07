@@ -33,7 +33,7 @@ simulation_settings <- unlist(
   recursive = FALSE
 )
 
-methods <- c("TFMseg", "TFMseg.vec", "FMseg", "LR")
+methods <- c("TFMseg", "LR")
 nrep <- 100L
 
 n_settings <- length(simulation_settings)
@@ -55,13 +55,11 @@ dim_obs <- setting$dim_obs
 dim_latent <- setting$dim_latent
 
 seed_start <- 900L
-data_setting <- "s2"
-dist <- "Gaussian"
+data_setting <- "s1"
 dep <- TRUE
 theta_coef <- c(0.25, 0.5, 0.75)
 r_hat <- c(3, 3, 3)
 trim_coef <- 1/4
-threshold_coef <- c(0.11684, 0.70480, 1.12316)
 acc_coef <- 1
 lrv <- TRUE
 V.diag <- TRUE
@@ -71,25 +69,19 @@ set.seed(seed_start + rep_id)
 res <- simu_comparison(
   method = method,
   nrep = 1,
-  seed_start = seed_start + rep_id - 1L,
   data_setting = data_setting,
   dim_obs = dim_obs,
   dim_latent = dim_latent,
   Time = Time,
-  dist = dist,
-  coeff = 0.7,
   dep = dep,
   m = NULL,
   theta_coef = theta_coef,
   r_hat = r_hat,
   trim_coef = trim_coef,
-  threshold_coef = threshold_coef,
-  thd.type = if (method %in% c("TFMseg","TFMseg.vec")) {
-    if (method == "TFMseg") "fixed" else "oracle"
-  } else "fixed",
+  detect_thd = NULL,
+  thd.type = "fixed",
   V.diag = V.diag,
-  lrv = lrv,
-  acc_coef = acc_coef
+  lrv = lrv
 )
 
 dir.create("results_tasks", showWarnings = FALSE, recursive = TRUE)

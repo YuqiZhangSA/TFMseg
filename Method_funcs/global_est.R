@@ -31,7 +31,7 @@ global_pca <- function(X, dim_X, r_hat = NULL,
   names(r_hat) <- sprintf("r_mode%d", seq_len(K))
   names(Lambda_init) <- sprintf("Lambda_init_mode%d", seq_len(K))
   
-  # Initial pseudo-factors G and common component
+  # Initial pseudo factors G and common component
   if (K == 1) {
     G <- t(Lambda_init[[1]]) %*% X_win / p
   } else {
@@ -89,7 +89,7 @@ global_pca <- function(X, dim_X, r_hat = NULL,
   }
   names(Lambda_proj) <- sprintf("Lambda_proj_mode%d", seq_len(K))
   
-  # Projected pseudo-factors and common component
+  # Projected pseudo factors and common component
   if (K == 1) {
     G_proj <- t(Lambda_proj[[1]]) %*% X_win / p
   } else {
@@ -149,16 +149,6 @@ slice_time <- function(A, ind) {
   do.call(`[`, c(list(A), idx, list(drop = FALSE)))
 }
 
-# Helper: Remove (collapse) one mode by aggregation
-remove_mode <- function(A, mode, FUN = mean, ...) {
-  dims <- seq_along(dim(A))
-  keep <- dims[-mode]
-  res <- apply(A, MARGIN = keep, FUN = FUN, ...)
-  if (length(keep) == 1) {
-    dim(res) <- dim(A)[keep]
-  }
-  return(res)
-}
 
 # Helper: Kronecker product of a list of matrices (right-to-left order)
 kronecker_list <- function(mat_list) {
