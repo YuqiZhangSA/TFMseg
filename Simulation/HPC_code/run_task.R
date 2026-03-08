@@ -60,7 +60,7 @@ dep <- TRUE
 theta_coef <- c(0.25, 0.5, 0.75)
 r_hat <- c(3, 3, 3)
 trim_coef <- 1/4
-acc_coef <- 1
+acc_coef <- 2
 lrv <- TRUE
 V.diag <- TRUE
 

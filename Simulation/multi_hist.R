@@ -123,6 +123,16 @@ multi_hist <- function(..., Time_list, theta_coef,
         )
     }
     
+    x_lab <- if (!is.null(dim_obs_list) && length(dim_obs_list) == 1) {
+      paste0(
+        "Estimated change points, (p1,p2,p3) = (",
+        paste(dim_obs_list[[1]], collapse = ","),
+        ")"
+      )
+    } else {
+      "Estimated change points"
+    }
+    
     p <- p +
       ggplot2::geom_vline(
         data = true_cp_centre,
@@ -137,7 +147,7 @@ multi_hist <- function(..., Time_list, theta_coef,
       ggplot2::facet_grid(rows = ggplot2::vars(Method), cols = ggplot2::vars(Time), drop = TRUE) +
       ggplot2::scale_x_continuous(limits = c(0, 1), breaks = c(0, 0.25, 0.5, 0.75, 1)) +
       ggplot2::scale_y_continuous(limits = c(0, rep), breaks = pretty(c(0, rep)), oob = scales::squish) +
-      ggplot2::labs(x = "Estimated change points (scaled)", y = "Frequencies") +
+      ggplot2::labs(x = x_lab, y = "Frequencies") +
       ggplot2::theme_bw() +
       ggplot2::theme(
         panel.border = ggplot2::element_blank(),

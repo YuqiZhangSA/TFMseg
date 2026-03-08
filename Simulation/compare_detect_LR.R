@@ -187,7 +187,6 @@ simbrownian_v <- function(t, n, dim) {
   w
 }
 
-cv_cache <- list()
 
 critical_value4_lr_HAC_m <- function(F_hat, tau1, seed = NULL) {
   if (!is.null(seed)) set.seed(seed)
@@ -227,17 +226,18 @@ critical_value4_lr_HAC_m <- function(F_hat, tau1, seed = NULL) {
   as.numeric(result_sort[idx])
 }
 
-critical_value4_lr_HAC_m_cached <- function(F_hat, tau1, seed = NULL) {
+critical_value4_lr_HAC_m_cached <- function(F_hat, tau1, seed = NULL, cv_cache) {
   r0 <- ncol(F_hat)
   key <- paste0("r", r0, "_tau", tau1, "_seed", if (is.null(seed)) "NULL" else seed)
   
   if (!is.null(cv_cache[[key]])) {
-    return(cv_cache[[key]])
+    return(list(cv = cv_cache[[key]], cv_cache = cv_cache))
   }
   
   cv <- critical_value4_lr_HAC_m(F_hat, tau1, seed = seed)
-  cv_cache[[key]] <<- cv
-  cv
+  cv_cache[[key]] <- cv
+  
+  list(cv = cv, cv_cache = cv_cache)
 }
 
 # New: global-trim BS for LR
@@ -262,12 +262,12 @@ logdet_safe <- function(S, eps = 1e-6) {
 
 LR_globaltrim_once <- function(X, s, e, min_gap, r_est,
                                tau_for_cv = 0.1, eps_ridge = 1e-6,
-                               seed = NULL) {
+                               seed = NULL, cv_cache) {
   Tn <- nrow(X)
   N <- ncol(X)
   
   if ((e - s + 1) < 2 * min_gap + 1) {
-    return(list(reject = 0L, k_hat = NA_integer_, lr = -Inf))
+    return(list(reject = 0L, k_hat = NA_integer_, lr = -Inf, cv_cache = cv_cache))
   }
   
   k_lo <- s + min_gap
@@ -288,7 +288,7 @@ LR_globaltrim_once <- function(X, s, e, min_gap, r_est,
   idx_lo <- k_lo - s + 1L
   idx_hi <- k_hi - s + 1L
   if (idx_lo < 1L || idx_hi > Tseg || idx_lo >= idx_hi) {
-    return(list(reject = 0L, k_hat = NA_integer_, lr = -Inf))
+    return(list(reject = 0L, k_hat = NA_integer_, lr = -Inf, cv_cache = cv_cache))
   }
   
   best_val <- Inf
@@ -313,10 +313,13 @@ LR_globaltrim_once <- function(X, s, e, min_gap, r_est,
     best_k_local * logdet_safe(S1, eps_ridge) -
     (Tseg - best_k_local) * logdet_safe(S2, eps_ridge)
   
-  cv <- critical_value4_lr_HAC_m_cached(F_hat, tau_for_cv, seed = seed)
+  tmp <- critical_value4_lr_HAC_m_cached(F_hat, tau_for_cv, seed = seed, cv_cache = cv_cache)
+  cv <- tmp$cv
+  cv_cache <- tmp$cv_cache
+  
   reject <- as.integer(LR_stat > cv[2])
   
-  list(reject = reject, k_hat = k_hat_global, lr = LR_stat)
+  list(reject = reject, k_hat = k_hat_global, lr = LR_stat, cv_cache = cv_cache)
 }
 
 bs_LR_globaltrim <- function(X, tau_global = 0.1, min_size = 20, r_est = NULL,
@@ -329,6 +332,8 @@ bs_LR_globaltrim <- function(X, tau_global = 0.1, min_size = 20, r_est = NULL,
   if (is.null(max_cps)) {
     max_cps <- max(0L, floor((Tn - 1) / min_gap) - 1L)
   }
+  
+  cv_cache <- list()
   
   seg_stack <- list(c(1L, Tn))
   cps <- integer(0)
@@ -347,8 +352,10 @@ bs_LR_globaltrim <- function(X, tau_global = 0.1, min_size = 20, r_est = NULL,
       X, s, e, min_gap, r_est,
       tau_for_cv = tau_for_cv,
       eps_ridge = eps_ridge,
-      seed = seed
+      seed = seed,
+      cv_cache = cv_cache
     )
+    cv_cache <- res$cv_cache
     
     if (res$reject == 1L && !is.na(res$k_hat)) {
       k <- res$k_hat
@@ -394,6 +401,5 @@ bs_LR_globaltrim <- function(X, tau_global = 0.1, min_size = 20, r_est = NULL,
     r_est = r_est
   )
 }
-
 
 
