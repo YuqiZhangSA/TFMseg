@@ -13,7 +13,8 @@ simu_comparison <- function(method = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
                             thd.type = c("fixed", "oracle"),
                             V.diag = TRUE,
                             lrv = TRUE,
-                            rvs = FALSE) {
+                            rvs = FALSE,
+                            miss = FALSE) {
   
   method <- match.arg(method)
   thd.type <- match.arg(thd.type)
@@ -257,23 +258,37 @@ simu_comparison <- function(method = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
     )
     
     X <- data_sim$X
-    
-    if (rvs) X <- X[, , , Time:1, drop = FALSE]
-    
     K <- length(dim(X)) - 1L
-    dim_X <- dim(X)[seq_len(K)]
+    dim_X <- dim(X)[seq_len(K)] #(p1,p2,p3)
+    
+    if (isTRUE(rvs)) X <- X[, , , Time:1, drop = FALSE]
     
     if (method == "TFMseg") {
       start_time <- Sys.time()
       
-      if (is.null(r_hat)) {
-        est_load <- global_pca(X = X, dim_X = dim_X, centre = TRUE, proj = TRUE)
-        G <- est_load$G_proj
-        G_dim <- as.vector(est_load$r_hat)
+      if (!isTRUE(miss)) {
+        if (is.null(r_hat)) {
+          est_load <- global_pca(X = X, dim_X = dim_X, centre = TRUE, proj = TRUE)
+          G <- est_load$G_proj
+          G_dim <- as.vector(est_load$r_hat)
+        } else {
+          est_load <- global_pca(X = X, dim_X = dim_X, r_hat = r_hat, proj = TRUE)
+          G <- est_load$G_proj
+          G_dim <- as.vector(r_hat)
+        }
       } else {
-        est_load <- global_pca(X = X, dim_X = dim_X, r_hat = r_hat, proj = TRUE)
-        G <- est_load$G_proj
-        G_dim <- as.vector(r_hat)
+        set.seed(seed_start + sim)
+        X_miss <- tensorMiss::miss_gen(aperm(X, c(4, 1, 2, 3)), type = "simul")
+        
+        if (is.null(r_hat)) {
+          est_load <- tensorMiss::miss_factor_est(X_miss, r = 0)
+          G <- aperm(est_load$Ft, c(2, 3, 4, 1))
+          G_dim <- as.vector(est_load$r)
+        } else {
+          est_load <- tensorMiss::miss_factor_est(X_miss, r = r_hat)
+          G <- aperm(est_load$Ft, c(2, 3, 4, 1))
+          G_dim <- as.vector(r_hat)
+        }
       }
       
       if (thd.type == "oracle") {
@@ -464,7 +479,8 @@ simu_ret <- function(methods = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
                      r_hat = NULL,
                      trim_coef = 1/4,
                      nrep = 100,
-                     rvs = FALSE) {
+                     rvs = FALSE,
+                     miss = FALSE) {
   
   data_setting <- match.arg(data_setting)
   
@@ -520,7 +536,8 @@ simu_ret <- function(methods = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
             thd.type = if (method %in% c("TFMseg", "TFMseg.vec")) thd.type else "fixed",
             V.diag = (V_shap == "diag"),
             lrv = lrv,
-            rvs = rvs
+            rvs = rvs,
+            miss = miss
           )
           
           results <- append(results, list(list(
