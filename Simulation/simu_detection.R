@@ -472,7 +472,10 @@ simu_comparison <- function(method = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
 simu_ret <- function(methods = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
                      detect_thd = NULL,
                      lrv = TRUE,
-                     simu_set_detect,
+                     simu_set_detect = NULL,
+                     Time_list = NULL,
+                     dim_obs_list = NULL,
+                     dim_latent = c(3, 3, 3),
                      data_setting = c("s0", "s1", "s1_var1", "s3_3I", "s3_A2", "s3_A1", "s2"),
                      dep = TRUE,
                      theta_coef = NULL,
@@ -484,7 +487,28 @@ simu_ret <- function(methods = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
   
   data_setting <- match.arg(data_setting)
   
+  if (is.null(simu_set_detect)) {
+    if (is.null(Time_list) || is.null(dim_obs_list)) {
+      stop("Provide either simu_set_detect, or both Time_list and dim_obs_list.")
+    }
+    
+    simu_set_detect <- unlist(
+      lapply(dim_obs_list, function(dobs) {
+        lapply(Time_list, function(Time) {
+          list(
+            Time = as.integer(Time),
+            dim_obs = as.integer(dobs),
+            dim_latent = as.integer(dim_latent)
+          )
+        })
+      }),
+      recursive = FALSE
+    )
+  }
+  
   results <- list()
+  total_jobs <- length(methods) * length(simu_set_detect)
+  job_id <- 0L
   
   for (method in methods) {
     thd.type_iter <- if (method == "TFMseg") {
@@ -506,18 +530,21 @@ simu_ret <- function(methods = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
       for (V_shap in V_shap_iter) {
         for (setting in simu_set_detect) {
           
+          job_id <- job_id + 1L
+          
           Time <- setting$Time
           dim_obs <- setting$dim_obs
-          dim_latent <- setting$dim_latent
+          dim_latent_i <- setting$dim_latent
           
           theta_local <- if (is.null(theta_coef)) c(0.25, 0.5, 0.75) else theta_coef
           theta_int <- floor(Time * theta_local)
           theta_int <- sort(unique(theta_int[theta_int > 0 & theta_int < Time]))
           m_local <- length(theta_int)
           
-          cat(sprintf(
-            "\nRunning simulation: Method = %s, T = %d, dim_obs = %s, V_shap = %s, thd.type = %s, m_true = %d\n",
-            method, Time, paste(dim_obs, collapse = "x"), V_shap, thd.type, m_local
+          message(sprintf(
+            "[simu_detect] %d/%d: Time=%d, dim_obs=%s, setting=%s, method=%s",
+            job_id, total_jobs, Time, paste(dim_obs, collapse = "x"),
+            data_setting, method
           ))
           
           res <- simu_comparison(
@@ -525,7 +552,7 @@ simu_ret <- function(methods = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
             nrep = nrep,
             data_setting = data_setting,
             dim_obs = dim_obs,
-            dim_latent = dim_latent,
+            dim_latent = dim_latent_i,
             Time = Time,
             dep = dep,
             m = m_local,
@@ -686,7 +713,6 @@ simu_ret <- function(methods = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
     check_counts = check_counts
   )
 }
-
 
 
 

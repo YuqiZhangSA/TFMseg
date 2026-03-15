@@ -454,7 +454,9 @@ id_modes_1 <- function(
 
 
 
-
+#------------------------------------------------------------
+# plots for each cp
+#------------------------------------------------------------
 
 library(dplyr)
 library(ggplot2)
@@ -564,4 +566,205 @@ pool_by_cp <- function(res_all_true) {
   }
   
   out
+}
+
+#------------------------------------------------------------
+# plots for pooled all together
+#------------------------------------------------------------
+#------------------------------------------------------------
+# 1. True changed modes by setting
+#------------------------------------------------------------
+get_changed_modes <- function(data_setting, cp_index) {
+  data_setting <- match.arg(
+    data_setting,
+    choices = c("s2", "s1", "s0", "s3_3I", "s3_A2", "s3_A1")
+  )
+  
+  if (data_setting == "s1") {
+    # cp1 -> mode 1, cp2 -> mode 2, cp3 -> mode 3
+    out <- list(
+      `1` = 1L,
+      `2` = 2L,
+      `3` = 3L
+    )
+    return(out[[as.character(cp_index)]])
+  }
+  
+  if (data_setting == "s2") {
+    out <- list(
+      `1` = 1L,
+      `2` = 2L,
+      `3` = c(2L, 3L)
+    )
+    return(out[[as.character(cp_index)]])
+  }
+  
+  if (data_setting %in% c("s3_3I", "s3_A2", "s3_A1")) {
+    return(1L)
+  }
+  
+  if (data_setting == "s0") {
+    return(integer(0))
+  }
+  
+  stop("Unknown data_setting: ", data_setting)
+}
+
+#------------------------------------------------------------
+# 2. Pool all cps together and label changed / unchanged
+#------------------------------------------------------------
+pool_all <- function(res_all_true) {
+  dfs <- list()
+  ii <- 0L
+  
+  for (nm in names(res_all_true)) {
+    obj <- res_all_true[[nm]]
+    setting <- obj$meta$setting
+    
+    for (j in seq_along(obj$zeta_by_cp)) {
+      dfj <- obj$zeta_by_cp[[j]]
+      if (is.null(dfj) || !nrow(dfj)) next
+      
+      changed_modes_j <- get_changed_modes(setting, j)
+      
+      dfj <- dfj %>%
+        mutate(
+          Time = obj$meta$Time,
+          dim_obs = paste(obj$meta$dim_obs, collapse = "x"),
+          setting_key = nm,
+          changed_truth = if_else(mode %in% changed_modes_j, "changed", "unchanged"),
+          cp_label = paste0("cp", j)
+        )
+      
+      ii <- ii + 1L
+      dfs[[ii]] <- dfj
+    }
+  }
+  
+  if (!length(dfs)) return(data.frame())
+  
+  out <- bind_rows(dfs) %>%
+    mutate(
+      changed_truth = factor(changed_truth, levels = c("unchanged", "changed")),
+      row_id = seq_len(n())
+    )
+  
+  out
+}
+
+#------------------------------------------------------------
+# 3. Pooled scatter plot
+#------------------------------------------------------------
+plot_zeta_pooled <- function(df,
+                             y = c("zeta", "ratio_Tp", "ratio_minLenp"),
+                             x = c("row_id", "sim"),
+                             keep_finite = TRUE,
+                             up_bound = c("q75", "q90", "q95", "q99", "max"),
+                             point_alpha = 0.55,
+                             point_size = 1.8,
+                             facet_by = c("none", "Time", "dim_obs", "cp_label")) {
+  y <- match.arg(y)
+  x <- match.arg(x)
+  up_bound <- match.arg(up_bound)
+  facet_by <- match.arg(facet_by)
+  
+  stopifnot(is.data.frame(df))
+  req_cols <- c("changed_truth", y, x)
+  miss <- setdiff(req_cols, names(df))
+  if (length(miss)) {
+    stop("df is missing columns: ", paste(miss, collapse = ", "))
+  }
+  
+  dat <- df
+  if (keep_finite) {
+    dat <- dat %>%
+      dplyr::filter(is.finite(.data[[x]]), is.finite(.data[[y]]))
+  }
+  
+  dat_unch <- dat %>% dplyr::filter(changed_truth == "unchanged")
+  if (!nrow(dat_unch)) stop("No unchanged rows found.")
+  
+  get_bound <- function(vec, which_bound) {
+    switch(
+      which_bound,
+      max = max(vec, na.rm = TRUE),
+      q75 = as.numeric(stats::quantile(vec, probs = 0.75, na.rm = TRUE)),
+      q90 = as.numeric(stats::quantile(vec, probs = 0.90, na.rm = TRUE)),
+      q95 = as.numeric(stats::quantile(vec, probs = 0.95, na.rm = TRUE)),
+      q99 = as.numeric(stats::quantile(vec, probs = 0.99, na.rm = TRUE))
+    )
+  }
+  
+  ub <- get_bound(dat_unch[[y]], up_bound)
+  
+  p <- ggplot(dat, aes(x = .data[[x]], y = .data[[y]], colour = changed_truth)) +
+    geom_point(alpha = point_alpha, size = point_size) +
+    geom_hline(yintercept = ub, linewidth = 0.9, linetype = 2) +
+    annotate(
+      "text",
+      x = -Inf, y = ub,
+      label = paste0("upper bound (", up_bound, ") = ", signif(ub, 4)),
+      hjust = -0.05, vjust = -0.4
+    ) +
+    labs(
+      x = NULL,
+      y = expression(Xi/(1/sqrt(T) + 1/p)),
+      colour = NULL
+    ) +
+    theme_classic() +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      legend.position = "bottom",
+      legend.text = element_text(size = 12),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+  
+  if (facet_by != "none") {
+    p <- p + facet_wrap(stats::as.formula(paste("~", facet_by)), scales = "free_x")
+  }
+  
+  p
+}
+
+
+#------------------------------------------------------------
+# 3. Pooled box plot
+#------------------------------------------------------------
+
+plot_zeta_pooled_box <- function(df,
+                                 y = c("zeta", "ratio_Tp", "ratio_minLenp"),
+                                 up_bound = c("q75", "q90", "q95", "q99", "max"),
+                                 facet_by = c("none", "Time", "dim_obs", "cp_label")) {
+  y <- match.arg(y)
+  up_bound <- match.arg(up_bound)
+  facet_by <- match.arg(facet_by)
+  
+  dat <- df %>% filter(is.finite(.data[[y]]))
+  dat_unch <- dat %>% filter(changed_truth == "unchanged")
+  
+  get_bound <- function(vec, which_bound) {
+    switch(
+      which_bound,
+      max = max(vec, na.rm = TRUE),
+      q75 = as.numeric(stats::quantile(vec, probs = 0.75, na.rm = TRUE)),
+      q90 = as.numeric(stats::quantile(vec, probs = 0.90, na.rm = TRUE)),
+      q95 = as.numeric(stats::quantile(vec, probs = 0.95, na.rm = TRUE)),
+      q99 = as.numeric(stats::quantile(vec, probs = 0.99, na.rm = TRUE))
+    )
+  }
+  
+  ub <- get_bound(dat_unch[[y]], up_bound)
+  
+  p <- ggplot(dat, aes(x = changed_truth, y = .data[[y]], colour = changed_truth)) +
+    geom_boxplot(outlier.alpha = 0.2) +
+    geom_hline(yintercept = ub, linewidth = 0.9, linetype = 2) +
+    labs(x = NULL, y = y, colour = NULL)
+  
+  if (facet_by != "none") {
+    p <- p + facet_wrap(stats::as.formula(paste("~", facet_by)))
+  }
+  
+  p
 }
