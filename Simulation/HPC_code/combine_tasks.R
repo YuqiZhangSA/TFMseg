@@ -21,13 +21,20 @@ combine_tasks <- function(results_dir,
                           out_name = "res_table",
                           strict = TRUE,
                           build_cp = TRUE,
-                          progress_every = 200L) {
+                          progress_every = 200L,
+                          method_filter = NULL) {
   
   results_dir <- path.expand(results_dir)
   if (!dir.exists(results_dir)) stop("results_dir does not exist: ", results_dir)
   
   files <- list.files(results_dir, pattern = "\\.rds$", full.names = TRUE)
   if (!length(files)) stop("No .rds files found in: ", results_dir)
+  
+  if (!is.null(method_filter)) {
+    files <- files[grepl(paste0("_method-", method_filter, "_"), basename(files), fixed = FALSE)]
+  }
+  
+  if (!length(files)) stop("No matching .rds files found after method filtering.")
   
   df_list <- vector("list", length(files))
   cp_list <- if (build_cp) vector("list", length(files)) else NULL
@@ -54,17 +61,14 @@ combine_tasks <- function(results_dir,
       dim_obs = paste(z$dim_obs, collapse = "x"),
       method = as.character(z$method),
       rep_id = z$rep_id,
-      
       le_m2 = freq[1],
       m1 = freq[2],
       m0 = freq[3],
       p1 = freq[4],
       ge_p2 = freq[5],
-      
       acc1 = acc[1] %||% NA_real_,
       acc2 = acc[2] %||% NA_real_,
       acc3 = acc[3] %||% NA_real_,
-      
       time = if (is.numeric(tsec)) tsec[1] else NA_real_,
       dep = dep,
       r_hat = z$r_hat %||% NA_real_
@@ -107,14 +111,11 @@ combine_tasks <- function(results_dir,
       `0` = mean(m0, na.rm = TRUE),
       `1` = mean(p1, na.rm = TRUE),
       `>= 2` = mean(ge_p2, na.rm = TRUE),
-      
       Accuracy_j1 = mean(acc1, na.rm = TRUE),
       Accuracy_j2 = mean(acc2, na.rm = TRUE),
       Accuracy_j3 = mean(acc3, na.rm = TRUE),
-      
       Mean_time_s = mean(time, na.rm = TRUE),
-      SD_time_s = sd(time,   na.rm = TRUE),
-      
+      SD_time_s = sd(time, na.rm = TRUE),
       .groups = "drop"
     ) %>%
     arrange(Time, dim_obs, method)
