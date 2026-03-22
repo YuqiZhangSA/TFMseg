@@ -425,3 +425,167 @@ multi_hist_subplot <- function(..., Time_list, theta_coef,
       legend.position = if (do_compare_dataset) "bottom" else "none"
     )
 }
+
+
+
+multi_hist_subplot_method <- function(
+    complete_1,
+    extract_1,
+    complete_2,
+    extract_2,
+    Time_list,
+    theta_coef,
+    dim_obs_list = NULL,
+    source_names = c("TFMseg"),
+    binwidth = 0.0625,
+    rep = 100,
+    acc = 2,
+    scenario_names = c("Complete data", "Missingness"),
+    dataset_names = c("Complete", "Extract"),
+    dataset_alpha = 0.5,
+    dataset_position = "identity"
+) {
+  
+  dataset_position <- match.arg(dataset_position, c("identity", "dodge"))
+  
+  get_df <- function(x) {
+    if (!is.null(x$cp_est_df)) x$cp_est_df else x
+  }
+  
+  df1 <- get_df(complete_1)
+  df2 <- get_df(extract_1)
+  df3 <- get_df(complete_2)
+  df4 <- get_df(extract_2)
+  
+  if (!all(vapply(list(df1, df2, df3, df4), is.data.frame, logical(1)))) {
+    stop("All inputs must be data.frames or objects containing cp_est_df.")
+  }
+  
+  df1 <- df1 %>% mutate(Scenario = scenario_names[1], Dataset = dataset_names[1])
+  df2 <- df2 %>% mutate(Scenario = scenario_names[1], Dataset = dataset_names[2])
+  df3 <- df3 %>% mutate(Scenario = scenario_names[2], Dataset = dataset_names[1])
+  df4 <- df4 %>% mutate(Scenario = scenario_names[2], Dataset = dataset_names[2])
+  
+  result <- bind_rows(df1, df2, df3, df4)
+  
+  if (!is.null(source_names)) {
+    result <- result %>% filter(method %in% source_names)
+  }
+  
+  if (!is.null(dim_obs_list)) {
+    dim_keep <- vapply(dim_obs_list, paste, collapse = "x", FUN.VALUE = character(1))
+    result <- result %>% filter(dim_obs %in% dim_keep)
+  } else {
+    dim_keep <- sort(unique(result$dim_obs))
+  }
+  
+  time_labels <- paste0("T=", Time_list)
+  
+  make_true_cp <- function(Tvals) {
+    tibble(Tval = Tvals) %>%
+      mutate(
+        w  = round(acc * log(Tval)),
+        i1 = floor(theta_coef[1] * Tval),
+        i2 = floor(theta_coef[2] * Tval),
+        i3 = floor(theta_coef[3] * Tval),
+        sc1 = i1 / Tval,
+        sc2 = i2 / Tval,
+        sc3 = i3 / Tval,
+        l1 = pmax(0, (i1 - w) / Tval),
+        r1 = pmin(1, (i1 + w) / Tval),
+        l2 = pmax(0, (i2 - w) / Tval),
+        r2 = pmin(1, (i2 + w) / Tval),
+        l3 = pmax(0, (i3 - w) / Tval),
+        r3 = pmin(1, (i3 + w) / Tval),
+        Time = factor(Tval, levels = Time_list, labels = time_labels)
+      ) %>%
+      select(Time, starts_with("sc"), starts_with("l"), starts_with("r")) %>%
+      pivot_longer(cols = -Time, names_to = "key", values_to = "x") %>%
+      mutate(
+        cp_name = gsub("^[slr]", "sc", key),
+        line_type = case_when(
+          substr(key, 1, 2) == "sc" ~ "centre",
+          substr(key, 1, 1) == "l" ~ "left",
+          TRUE ~ "right"
+        )
+      )
+  }
+  
+  cp_est_df_plot <- result %>%
+    filter(!is.na(scaled_cp), Time %in% Time_list) %>%
+    mutate(
+      Time = factor(Time, levels = Time_list, labels = time_labels),
+      Method = factor(method, levels = source_names),
+      dim_obs = factor(dim_obs, levels = dim_keep),
+      Dataset = factor(Dataset, levels = dataset_names),
+      Scenario = factor(Scenario, levels = scenario_names)
+    )
+  
+  true_cp_df <- make_true_cp(Time_list)
+  true_cp_centre <- true_cp_df %>% filter(line_type == "centre")
+  true_cp_bounds <- true_cp_df %>% filter(line_type != "centre")
+  
+  dim_labels <- setNames(
+    paste0("(", gsub("x", ",", dim_keep), ")"),
+    dim_keep
+  )
+  
+  p <- ggplot(cp_est_df_plot, aes(x = scaled_cp))
+  
+  p <- p +
+    geom_histogram(
+      aes(y = after_stat(count), fill = Dataset),
+      binwidth = binwidth,
+      center = theta_coef[1],
+      colour = "black",
+      position = dataset_position,
+      alpha = dataset_alpha
+    ) +
+    geom_vline(
+      data = true_cp_centre,
+      aes(xintercept = x, group = cp_name),
+      linetype = "dashed",
+      colour = "red",
+      linewidth = 0.6,
+      inherit.aes = FALSE
+    ) +
+    geom_vline(
+      data = true_cp_bounds,
+      aes(xintercept = x, group = interaction(cp_name, line_type)),
+      linetype = "dotted",
+      colour = "steelblue1",
+      linewidth = 0.4,
+      inherit.aes = FALSE
+    ) +
+    facet_grid(
+      rows = vars(dim_obs),
+      cols = vars(Time, Scenario),
+      labeller = labeller(dim_obs = dim_labels)
+    ) +
+    scale_x_continuous(
+      limits = c(0, 1),
+      breaks = c(0, 0.25, 0.5, 0.75, 1)
+    ) +
+    scale_y_continuous(
+      limits = c(0, rep),
+      breaks = pretty(c(0, rep)),
+      oob = squish
+    ) +
+    labs(
+      x = "Estimated change points",
+      y = "Frequencies"
+    ) +
+    theme_bw() +
+    theme(
+      panel.border = element_blank(),
+      axis.line = element_line(colour = "black"),
+      panel.grid.major = element_line(colour = "grey90"),
+      panel.grid.minor = element_line(colour = "grey95"),
+      strip.background = element_blank(),
+      strip.text.x = element_text(face = "bold"),
+      strip.text.y = element_text(face = "bold"),
+      legend.position = "bottom"
+    )
+  
+  return(p)
+}

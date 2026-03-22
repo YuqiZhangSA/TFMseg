@@ -88,6 +88,21 @@ NbFactors2 <- function(X, kmax = NULL) {
   )
 }
 
+
+panelFactorNew_R <- function(X, r) {
+  Tn <- nrow(X)
+  N  <- ncol(X)
+  
+  XX <- X %*% t(X) / (N * Tn)
+  sv <- svd(XX)
+  
+  factor <- sv$u[, 1:r, drop = FALSE] * sqrt(Tn)
+  lambda <- t(X) %*% factor / Tn
+  VNT <- diag(sv$d[1:r], nrow = r)
+  
+  list(factor = factor, lambda = lambda, VNT = VNT)
+}
+
 # VAR/HAC
 fitVAR <- function(Y, p_min = 1, p_max = 1) {
   p <- p_min
@@ -276,14 +291,8 @@ LR_globaltrim_once <- function(X, s, e, min_gap, r_est,
   Xseg <- X[s:e, , drop = FALSE]
   Tseg <- nrow(Xseg)
   
-  if (Tseg < N) {
-    eig_all <- eigen(Xseg %*% t(Xseg), symmetric = TRUE)
-    F_hat <- sqrt(Tseg) * eig_all$vectors[, 1:r_est, drop = FALSE]
-  } else {
-    eig_all <- eigen(t(Xseg) %*% Xseg, symmetric = TRUE)
-    loadings <- sqrt(N) * eig_all$vectors[, 1:r_est, drop = FALSE]
-    F_hat <- Xseg %*% loadings / N
-  }
+  pf <- panelFactorNew_R(Xseg, r_est)
+  F_hat <- pf$factor
   
   idx_lo <- k_lo - s + 1L
   idx_hi <- k_hi - s + 1L
@@ -316,8 +325,7 @@ LR_globaltrim_once <- function(X, s, e, min_gap, r_est,
   tmp <- critical_value4_lr_HAC_m_cached(F_hat, tau_for_cv, seed = seed, cv_cache = cv_cache)
   cv <- tmp$cv
   cv_cache <- tmp$cv_cache
-  
-  reject <- as.integer(LR_stat > cv[2])
+  reject <- as.integer(LR_stat > cv[3]) 
   
   list(reject = reject, k_hat = k_hat_global, lr = LR_stat, cv_cache = cv_cache)
 }

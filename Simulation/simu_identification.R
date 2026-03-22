@@ -729,20 +729,43 @@ plot_zeta_pooled <- function(df,
 }
 
 
-#------------------------------------------------------------
-# 3. Pooled box plot
-#------------------------------------------------------------
-
-plot_zeta_pooled_box <- function(df,
-                                 y = c("zeta", "ratio_Tp", "ratio_minLenp"),
-                                 up_bound = c("q75", "q90", "q95", "q99", "max"),
-                                 facet_by = c("none", "Time", "dim_obs", "cp_label")) {
+plot_zeta_pooled <- function(df,
+                             y = c("zeta", "ratio_Tp", "ratio_minLenp"),
+                             x = c("row_id", "sim"),
+                             keep_finite = TRUE,
+                             up_bound = c("q75", "q90", "q95", "q99", "max"),
+                             point_alpha = 0.55,
+                             point_size = 1.8,
+                             show_setting_boundaries = TRUE,
+                             show_dim_top = TRUE,
+                             show_time_bracket = TRUE,
+                             dim_text_size = 2.8,
+                             time_text_size = 2.8,
+                             ub_text_size = 3.2,
+                             axis_text_size = 9,
+                             axis_title_size = 9,
+                             legend_text_size = 10,
+                             legend_key_size = 1.0) {
   y <- match.arg(y)
+  x <- match.arg(x)
   up_bound <- match.arg(up_bound)
-  facet_by <- match.arg(facet_by)
   
-  dat <- df %>% filter(is.finite(.data[[y]]))
-  dat_unch <- dat %>% filter(changed_truth == "unchanged")
+  stopifnot(is.data.frame(df))
+  req_cols <- c("changed_truth", y, x, "Time", "dim_obs")
+  miss <- setdiff(req_cols, names(df))
+  if (length(miss)) {
+    stop("df is missing columns: ", paste(miss, collapse = ", "))
+  }
+  
+  dat <- df
+  
+  if (keep_finite) {
+    dat <- dat %>%
+      dplyr::filter(is.finite(.data[[x]]), is.finite(.data[[y]]))
+  }
+  
+  dat_unch <- dat %>% dplyr::filter(changed_truth == "unchanged")
+  if (!nrow(dat_unch)) stop("No unchanged rows found.")
   
   get_bound <- function(vec, which_bound) {
     switch(
@@ -757,13 +780,131 @@ plot_zeta_pooled_box <- function(df,
   
   ub <- get_bound(dat_unch[[y]], up_bound)
   
-  p <- ggplot(dat, aes(x = changed_truth, y = .data[[y]], colour = changed_truth)) +
-    geom_boxplot(outlier.alpha = 0.2) +
-    geom_hline(yintercept = ub, linewidth = 0.9, linetype = 2) +
-    labs(x = NULL, y = y, colour = NULL)
+  setting_df <- dat %>%
+    dplyr::group_by(Time, dim_obs) %>%
+    dplyr::summarise(
+      xmin = min(.data[[x]], na.rm = TRUE),
+      xmax = max(.data[[x]], na.rm = TRUE),
+      xmid = (xmin + xmax) / 2,
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      dim_obs_lab = paste0("(", gsub("x", ",", dim_obs), ")")
+    ) %>%
+    dplyr::arrange(xmin)
   
-  if (facet_by != "none") {
-    p <- p + facet_wrap(stats::as.formula(paste("~", facet_by)))
+  time_df <- setting_df %>%
+    dplyr::group_by(Time) %>%
+    dplyr::summarise(
+      xmin = min(xmin),
+      xmax = max(xmax),
+      xmid = (xmin + xmax) / 2,
+      .groups = "drop"
+    ) %>%
+    dplyr::arrange(xmin)
+  
+  y_min <- min(dat[[y]], na.rm = TRUE)
+  y_max <- max(dat[[y]], na.rm = TRUE)
+  y_rng <- y_max - y_min
+  
+  y_top_lab      <- y_max + 0.04 * y_rng
+  y_bot_bracket  <- y_min - 0.010 * y_rng
+  y_bot_text     <- y_min - 0.050 * y_rng
+  bracket_tick_h <- 0.030 * y_rng
+  
+  p <- ggplot(dat, aes(x = .data[[x]], y = .data[[y]], colour = changed_truth)) +
+    geom_point(alpha = point_alpha, size = point_size) +
+    geom_hline(yintercept = ub, linewidth = 0.9, linetype = 2) +
+    annotate(
+      "text",
+      x = min(dat[[x]], na.rm = TRUE),
+      y = ub,
+      label = paste0("upper bound (", up_bound, ") = ", signif(ub, 4)),
+      hjust = 0,
+      vjust = -0.35,
+      size = ub_text_size
+    ) +
+    labs(
+      x = NULL,
+      y = expression(Xi / (1/sqrt(T) + 1/p)),
+      colour = NULL
+    ) +
+    theme_classic() +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_text(size = axis_text_size),
+      axis.title.y = element_text(size = axis_title_size),
+      legend.position = "bottom",
+      legend.text = element_text(size = legend_text_size),
+      legend.key.size = grid::unit(legend_key_size, "lines"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.margin = margin(t = 28, r = 12, b = 12, l = 12)
+    ) +
+    coord_cartesian(
+      ylim = c(y_min - 0.060 * y_rng, y_max + 0.060 * y_rng),
+      clip = "off"
+    )
+  
+  if (show_setting_boundaries && nrow(setting_df) > 1) {
+    boundary_x <- head(setting_df$xmax, -1) + 0.5
+    p <- p +
+      geom_vline(
+        xintercept = boundary_x,
+        linetype = 3,
+        linewidth = 0.4,
+        colour = "grey60"
+      )
+  }
+  
+  if (show_dim_top) {
+    p <- p +
+      geom_text(
+        data = setting_df,
+        aes(x = xmid, y = y_top_lab, label = dim_obs_lab),
+        inherit.aes = FALSE,
+        angle = 90,
+        hjust = 1,      # align by right bracket at the top
+        vjust = 0.5,
+        size = dim_text_size
+      )
+  }
+  
+  if (show_time_bracket) {
+    p <- p +
+      geom_segment(
+        data = time_df,
+        aes(x = xmin, xend = xmax, y = y_bot_bracket, yend = y_bot_bracket),
+        inherit.aes = FALSE,
+        linewidth = 0.45,
+        colour = "grey35"
+      ) +
+      geom_segment(
+        data = time_df,
+        aes(x = xmin, xend = xmin,
+            y = y_bot_bracket - bracket_tick_h / 2,
+            yend = y_bot_bracket + bracket_tick_h / 2),
+        inherit.aes = FALSE,
+        linewidth = 0.45,
+        colour = "grey35"
+      ) +
+      geom_segment(
+        data = time_df,
+        aes(x = xmax, xend = xmax,
+            y = y_bot_bracket - bracket_tick_h / 2,
+            yend = y_bot_bracket + bracket_tick_h / 2),
+        inherit.aes = FALSE,
+        linewidth = 0.45,
+        colour = "grey35"
+      ) +
+      geom_text(
+        data = time_df,
+        aes(x = xmid, y = y_bot_text, label = paste0("T = ", Time)),
+        inherit.aes = FALSE,
+        size = time_text_size,
+        colour = "grey20"
+      )
   }
   
   p

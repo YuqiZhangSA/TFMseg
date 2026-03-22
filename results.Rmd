@@ -18,58 +18,46 @@ for (d in dirs) {
 
 # Detection results
 
-```{r}
-Ts <- c(400, 800, 1600, 3200)[1:4]
-
-dim_obs_list <- list(c(10, 10, 10), c(20, 20, 20), c(10, 20, 40), c(10, 10, 100))[1]
-
-simulation_settings <- unlist(
-  lapply(dim_obs_list, function(dobs) {
-    lapply(Ts, function(Time) { list(Time = Time, dim_obs = dobs, dim_latent = c(3, 3, 3))}) }),
-  recursive = FALSE
-)
-
-```
-
-
 
 ```{r}
-tab_1 <- simu_ret(methods = c("TFMseg", "LR")[1], 
-                  simu_set_detect = simulation_settings,
+tab_1 <- simu_ret(methods = c("TFMseg", "LR"), 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100))[1],
+                  Time_list = c(400, 800, 1600, 3200)[1],
                   data_setting = "s0", dep = TRUE, theta_coef = c(0,0,0), r_hat = NULL)
 tab_1$table
 
-multi_hist(
-  tab_1,
-  Time_list = c(400, 800, 1600, 3200)[1],
-  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100))[1],
-  theta_coef = c(0.25, 0.5, 0.75),
-  source_names = c("TFMseg", "LR")[1]
-)
+# multi_hist(
+#   tab_1,
+#   Time_list = c(400, 800, 1600, 3200)[1],
+#   dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100))[1],
+#   theta_coef = c(0.25, 0.5, 0.75),
+#   source_names = c("TFMseg", "LR")[1]
+# )
 
 ```
 
 
 ```{r}
-tab_2 <- simu_ret(methods = c("TFMseg", "LR"), 
-                  simu_set_detect = simulation_settings,
+tab_2 <- simu_ret(methods = c("TFMseg", "LR")[2], 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100))[1],
+                    Time_list = c(400, 800, 1600, 3200)[3],
                   data_setting = "s1", dep = TRUE, theta_coef = c(0.25,0.5,0.75), r_hat = NULL, nrep = 50)
 tab_2$table
 
-tab_2_good <- extract_accurate(tab_2, source_names = c("TFMseg","LR"), exact_3_change = TRUE, sep_scaled = 0.1)
-
-multi_hist(
-  tab_2, # all
-  tab_2_good, # filtered
-  Time_list = c(400, 800, 1600, 3200),
-  dim_obs_list =  list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100))[1],
-  theta_coef = c(0.25, 0.5, 0.75),
-  source_names = c("TFMseg", "LR"),
-  compare_dataset = TRUE,
-  dataset_names = c("All", "Accurate"),
-  dataset_position = "identity", 
-  binwidth = 0.08
-)
+# tab_2_good <- extract_accurate(tab_2, source_names = c("TFMseg","LR"), exact_3_change = TRUE, sep_scaled = 0.1)
+# 
+# multi_hist(
+#   tab_2, # all
+#   tab_2_good, # filtered
+#   Time_list = c(400, 800, 1600, 3200),
+#   dim_obs_list =  list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100))[1],
+#   theta_coef = c(0.25, 0.5, 0.75),
+#   source_names = c("TFMseg", "LR"),
+#   compare_dataset = TRUE,
+#   dataset_names = c("All", "Accurate"),
+#   dataset_position = "identity", 
+#   binwidth = 0.08
+# )
 
 
 ```

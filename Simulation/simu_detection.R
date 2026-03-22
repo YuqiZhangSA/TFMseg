@@ -387,7 +387,7 @@ simu_comparison <- function(method = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
       time_sec[sim] <- as.numeric(lubridate::as.period(end_time - start_time, unit = "sec"))
       
     } else {
-      source("/Users/yuqi/Documents/GitHub/TFMseg/Simulation/compare_detect_LR.R")
+      #source("/Users/yuqi/Documents/GitHub/TFMseg/Simulation/compare_detect_LR.R")
       start_time <- Sys.time()
       
       Xd <- matrix(aperm(X, c(K + 1L, seq_len(K))), nrow = Time)
