@@ -15,26 +15,59 @@ library(tidyr)
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
-combine_tasks <- function(results_dir,
+combine_tasks <- function(results_dirs,
+                          method_filters = NULL,
                           dep = FALSE,
                           out_dir = NULL,
                           out_name = "res_table",
                           strict = TRUE,
                           build_cp = TRUE,
-                          progress_every = 200L,
-                          method_filter = NULL) {
+                          progress_every = 200L) {
   
-  results_dir <- path.expand(results_dir)
-  if (!dir.exists(results_dir)) stop("results_dir does not exist: ", results_dir)
+  results_dirs <- path.expand(results_dirs)
   
-  files <- list.files(results_dir, pattern = "\\.rds$", full.names = TRUE)
-  if (!length(files)) stop("No .rds files found in: ", results_dir)
-  
-  if (!is.null(method_filter)) {
-    files <- files[grepl(paste0("_method-", method_filter, "_"), basename(files), fixed = FALSE)]
+  if (length(results_dirs) == 0L) {
+    stop("results_dirs must contain at least one folder.")
   }
   
-  if (!length(files)) stop("No matching .rds files found after method filtering.")
+  if (any(!dir.exists(results_dirs))) {
+    bad_dirs <- results_dirs[!dir.exists(results_dirs)]
+    stop("These results_dirs do not exist: ", paste(bad_dirs, collapse = ", "))
+  }
+  
+  if (is.null(method_filters)) {
+    method_filters <- rep(NA_character_, length(results_dirs))
+  }
+  
+  if (length(method_filters) != length(results_dirs)) {
+    stop("method_filters must have the same length as results_dirs.")
+  }
+  
+  files <- unlist(
+    lapply(seq_along(results_dirs), function(j) {
+      this_dir <- results_dirs[j]
+      this_filter <- method_filters[j]
+      
+      this_files <- list.files(this_dir, pattern = "\\.rds$", full.names = TRUE)
+      
+      if (!length(this_files)) return(character(0))
+      
+      if (!is.na(this_filter) && !is.null(this_filter) && nzchar(this_filter)) {
+        this_files <- this_files[
+          grepl(paste0("_method-", this_filter, "_"),
+                basename(this_files),
+                fixed = FALSE)
+        ]
+      }
+      
+      this_files
+    }),
+    use.names = FALSE
+  )
+  
+  if (!length(files)) {
+    stop("No matching .rds files found after directory-specific method filtering.")
+  }
   
   df_list <- vector("list", length(files))
   cp_list <- if (build_cp) vector("list", length(files)) else NULL
@@ -132,6 +165,12 @@ combine_tasks <- function(results_dir,
     df_raw = df_raw,
     cp_est_df = cp_est_df,
     check_counts = check_counts,
-    meta = list(results_dir = results_dir, dep = dep, n_files = length(files), build_cp = build_cp)
+    meta = list(
+      results_dirs = results_dirs,
+      method_filters = method_filters,
+      dep = dep,
+      n_files = length(files),
+      build_cp = build_cp
+    )
   )
 }

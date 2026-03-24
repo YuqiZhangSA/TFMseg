@@ -1,8 +1,14 @@
-mode_informed_proj <- function(X, dim_X, st, ed, k,
-                               Lambda1_seg, Lambda_comp_pool,
+mode_informed_proj <- function(X, dim_X, cp,
+                               k,
+                               Lambda1_pre, Lambda1_post,
+                               Lambda_comp_pool,
                                r_k, centre = TRUE) {
   stopifnot(length(dim_X) == 3L)
   stopifnot(k %in% c(2L, 3L))
+  
+  Time <- dim(X)[4]
+  stopifnot(!is.na(Time), Time >= 2L)
+  stopifnot(cp >= 1L, cp < Time)
   
   if (centre) {
     X_use <- centre_along_axis(X, axis = length(dim(X)))
@@ -10,34 +16,40 @@ mode_informed_proj <- function(X, dim_X, st, ed, k,
     X_use <- X
   }
   
-  idx_time <- st:ed
-  T_win <- length(idx_time)
-  X_win <- slice_time(X_use, idx_time)
   p_k <- dim_X[k]
   
   if (k == 2L) {
     p_mk <- dim_X[1] * dim_X[3]
-    Lambda_kron <- kronecker_list(list(Lambda_comp_pool, Lambda1_seg))
+    Lambda_kron_pre  <- kronecker_list(list(Lambda_comp_pool, Lambda1_pre))
+    Lambda_kron_post <- kronecker_list(list(Lambda_comp_pool, Lambda1_post))
   } else {
     p_mk <- dim_X[1] * dim_X[2]
-    Lambda_kron <- kronecker_list(list(Lambda_comp_pool, Lambda1_seg))
+    Lambda_kron_pre  <- kronecker_list(list(Lambda_comp_pool, Lambda1_pre))
+    Lambda_kron_post <- kronecker_list(list(Lambda_comp_pool, Lambda1_post))
   }
   
   perm <- c(k, setdiff(seq_len(3L), k), 4L)
-  Xp <- aperm(X_win, perm)
+  Xp <- aperm(X_use, perm)
   
   sum_Y <- matrix(0, nrow = p_k, ncol = p_k)
-  for (t in seq_len(T_win)) {
+  
+  for (t in seq_len(cp)) {
     Xkt <- matrix(slice_time(Xp, t), nrow = p_k)
-    Ykt_t <- (1 / p_mk) * Xkt %*% Lambda_kron
-    sum_Y <- sum_Y + Ykt_t %*% t(Ykt_t)
+    Ykt <- (1 / p_mk) * Xkt %*% Lambda_kron_pre
+    sum_Y <- sum_Y + Ykt %*% t(Ykt)
   }
   
-  Gamma_Y <- sum_Y / (T_win * p_k)
+  for (t in seq.int(cp + 1L, Time)) {
+    Xkt <- matrix(slice_time(Xp, t), nrow = p_k)
+    Ykt <- (1 / p_mk) * Xkt %*% Lambda_kron_post
+    sum_Y <- sum_Y + Ykt %*% t(Ykt)
+  }
+  
+  Gamma_Y <- sum_Y / (Time * p_k)
   eigY <- eigen(Gamma_Y, symmetric = TRUE)
+  
   eigY$vectors[, seq_len(r_k), drop = FALSE] * sqrt(p_k)
 }
-
 
 compare_reest <- function(
     dim_obs,
@@ -184,46 +196,38 @@ compare_reest <- function(
   Lambda_init_pool <- fit_full0$Lambda_init
   
   ## M2
+  ## changed mode: same as M1, segment by segment
   Lambda_M2_pre <- vector("list", 3L)
   Lambda_M2_post <- vector("list", 3L)
-  Lambda_M2_pre[[1]] <- fit_pre$Lambda_proj[[1]]
+  Lambda_M2_pool <- vector("list", 3L)
+  
+  Lambda_M2_pre[[1]]  <- fit_pre$Lambda_proj[[1]]
   Lambda_M2_post[[1]] <- fit_post$Lambda_proj[[1]]
+  Lambda_M2_pool[[1]] <- NULL
   
-  Lambda_M2_pre[[2]] <- mode_informed_proj(
-    X = X, dim_X = dim_X,
-    st = 1L, ed = cp_hat, k = 2L,
-    Lambda1_seg = fit_pre$Lambda_proj[[1]],
+  ## unchanged mode 2: one pooled estimator over the whole sample
+  Lambda_M2_pool[[2]] <- mode_informed_proj(
+    X = X, dim_X = dim_X, cp = cp_hat, k = 2L,
+    Lambda1_pre = fit_pre$Lambda_proj[[1]],
+    Lambda1_post = fit_post$Lambda_proj[[1]],
     Lambda_comp_pool = Lambda_init_pool[[3]],
-    r_k = r_pre_used[2],
+    r_k = r_full_used[2],
     centre = TRUE
   )
+  Lambda_M2_pre[[2]]  <- NULL
+  Lambda_M2_post[[2]] <- NULL
   
-  Lambda_M2_post[[2]] <- mode_informed_proj(
-    X = X, dim_X = dim_X,
-    st = cp_hat + 1L, ed = Time, k = 2L,
-    Lambda1_seg = fit_post$Lambda_proj[[1]],
-    Lambda_comp_pool = Lambda_init_pool[[3]],
-    r_k = r_post_used[2],
-    centre = TRUE
-  )
-  
-  Lambda_M2_pre[[3]] <- mode_informed_proj(
-    X = X, dim_X = dim_X,
-    st = 1L, ed = cp_hat, k = 3L,
-    Lambda1_seg = fit_pre$Lambda_proj[[1]],
+  ## unchanged mode 3: one pooled estimator over the whole sample
+  Lambda_M2_pool[[3]] <- mode_informed_proj(
+    X = X, dim_X = dim_X, cp = cp_hat, k = 3L,
+    Lambda1_pre = fit_pre$Lambda_proj[[1]],
+    Lambda1_post = fit_post$Lambda_proj[[1]],
     Lambda_comp_pool = Lambda_init_pool[[2]],
-    r_k = r_pre_used[3],
+    r_k = r_full_used[3],
     centre = TRUE
   )
-  
-  Lambda_M2_post[[3]] <- mode_informed_proj(
-    X = X, dim_X = dim_X,
-    st = cp_hat + 1L, ed = Time, k = 3L,
-    Lambda1_seg = fit_post$Lambda_proj[[1]],
-    Lambda_comp_pool = Lambda_init_pool[[2]],
-    r_k = r_post_used[3],
-    centre = TRUE
-  )
+  Lambda_M2_pre[[3]]  <- NULL
+  Lambda_M2_post[[3]] <- NULL
   
   # Match the true loading matrix to the estimated rank by taking
   # the first r_hat true columns, consistent with the DGP ordering.
@@ -245,11 +249,20 @@ compare_reest <- function(
     M1_post <- tensorMiss::fle(fit_post$Lambda_proj[[k]], true_post_M1)
     
     ## M2
-    true_pre_M2  <- true_match(true_pre[[k]],  Lambda_M2_pre[[k]])
-    true_post_M2 <- true_match(true_post[[k]], Lambda_M2_post[[k]])
-    
-    M2_pre  <- tensorMiss::fle(Lambda_M2_pre[[k]],  true_pre_M2)
-    M2_post <- tensorMiss::fle(Lambda_M2_post[[k]], true_post_M2)
+    if (k == 1L) {
+      true_pre_M2  <- true_match(true_pre[[k]],  Lambda_M2_pre[[k]])
+      true_post_M2 <- true_match(true_post[[k]], Lambda_M2_post[[k]])
+      
+      M2_pre  <- tensorMiss::fle(Lambda_M2_pre[[k]],  true_pre_M2)
+      M2_post <- tensorMiss::fle(Lambda_M2_post[[k]], true_post_M2)
+      M2_pool <- NA_real_
+    } else {
+      true_pool_M2 <- true_match(true_pre[[k]], Lambda_M2_pool[[k]])
+      M2_pool <- tensorMiss::fle(Lambda_M2_pool[[k]], true_pool_M2)
+      
+      M2_pre  <- NA_real_
+      M2_post <- NA_real_
+    }
     
     ## M3
     if (changed_hat[k]) {
@@ -278,6 +291,7 @@ compare_reest <- function(
       M1_post = M1_post,
       M2_pre = M2_pre,
       M2_post = M2_post,
+      M2_pool = M2_pool,
       M3_pre = M3_pre,
       M3_post = M3_post
     )
@@ -459,17 +473,15 @@ simu_reest <- function(
       mode1_post_M3 = get_mean(1, "M3_post"),
       
       mode2_pre_M1  = get_mean(2, "M1_pre"),
-      mode2_pre_M2  = get_mean(2, "M2_pre"),
+      mode2_M2      = get_mean(2, "M2_pool"),
       mode2_pre_M3  = get_mean(2, "M3_pre"),
       mode2_post_M1 = get_mean(2, "M1_post"),
-      mode2_post_M2 = get_mean(2, "M2_post"),
       mode2_post_M3 = get_mean(2, "M3_post"),
       
       mode3_pre_M1  = get_mean(3, "M1_pre"),
-      mode3_pre_M2  = get_mean(3, "M2_pre"),
+      mode3_M2      = get_mean(3, "M2_pool"),
       mode3_pre_M3  = get_mean(3, "M3_pre"),
       mode3_post_M1 = get_mean(3, "M1_post"),
-      mode3_post_M2 = get_mean(3, "M2_post"),
       mode3_post_M3 = get_mean(3, "M3_post")
     )
   }))
@@ -518,241 +530,258 @@ simu_reest <- function(
   )
 }
 
-library(dplyr)
-library(tidyr)
-library(ggplot2)
 
 plot_reest_box <- function(reest_obj,
-                           Time,
-                           dim_obs,
+                           Time_select,
+                           dim_obs_list,
                            mode = c(2, 3),
-                           methods = c("M1", "M2", "M3"),
-                           use_valid_idt_only = TRUE,
-                           pool_type = c("stack", "average"),
+                           show_M3 = FALSE,
                            y_lim = NULL,
-                           outlier_size = 1.8,
-                           box_width = 0.65) {
-  pool_type <- match.arg(pool_type)
-  
-  methods <- unique(methods)
-  methods <- match.arg(methods, choices = c("M1", "M2", "M3"), several.ok = TRUE)
-  
+                           outlier_size = 1.2,
+                           box_width = 0.65,
+                           title_suffix = NULL) {
   mode <- as.integer(mode)
-  if (!all(mode %in% c(1L, 2L, 3L))) {
-    stop("`mode` must be one or more of 1, 2, 3.")
+  if (!all(mode %in% c(2L, 3L))) {
+    stop("`mode` must be chosen from 2 and 3 only.")
   }
   
-  loss_df <- if (use_valid_idt_only) {
-    reest_obj$loss_mode_all_idt
-  } else {
-    reest_obj$loss_mode_all
-  }
+  loss_df <- reest_obj$loss_mode_all_idt
   
   if (is.null(loss_df) || nrow(loss_df) == 0L) {
-    stop("No loss data available in `reest_obj`.")
+    stop("No loss data available in `reest_obj$loss_mode_all_idt`.")
   }
   
-  dim_obs_chr <- paste(dim_obs, collapse = "x")
-  
-  df_sub <- loss_df %>%
-    dplyr::filter(Time == !!Time, dim_obs == !!dim_obs_chr, mode %in% !!mode)
-  
-  if (nrow(df_sub) == 0L) {
-    stop("No matching rows found for the given `Time`, `dim_obs`, and `mode`.")
-  }
-  
-  main_cols <- as.vector(outer(methods, c("pre", "post"), paste, sep = "_"))
-  
-  df_long_main <- df_sub %>%
-    dplyr::select(sim, mode, dplyr::all_of(main_cols)) %>%
-    tidyr::pivot_longer(
-      cols = dplyr::all_of(main_cols),
-      names_to = c("method", "period"),
-      names_sep = "_",
-      values_to = "error"
-    )
-  
-  if (pool_type == "stack") {
-    df_pool <- df_long_main %>%
-      dplyr::mutate(period = "pool")
-  } else {
-    pool_cols <- as.vector(outer(methods, c("pre", "post"), paste, sep = "_"))
-    
-    df_pool <- df_sub %>%
-      dplyr::select(sim, mode, dplyr::all_of(pool_cols))
-    
-    for (m in methods) {
-      df_pool[[m]] <- 0.5 * (df_pool[[paste0(m, "_pre")]] + df_pool[[paste0(m, "_post")]])
-    }
-    
-    df_pool <- df_pool %>%
-      dplyr::select(sim, mode, dplyr::all_of(methods)) %>%
-      tidyr::pivot_longer(
-        cols = dplyr::all_of(methods),
-        names_to = "method",
-        values_to = "error"
-      ) %>%
-      dplyr::mutate(period = "pool")
-  }
-  
-  df_plot <- dplyr::bind_rows(df_long_main, df_pool) %>%
-    dplyr::mutate(
-      period = factor(period, levels = c("pre", "post", "pool"),
-                      labels = c("Pre", "Post", "Pool")),
-      method = factor(method, levels = c("M1", "M2", "M3")),
-      mode = factor(mode, levels = c(1, 2, 3),
-                    labels = c("Mode 1", "Mode 2", "Mode 3"))
-    )
-  
-  method_colours <- c(
-    "M1" = "#F4B6C2",  # soft pink
-    "M2" = "#9ECAE1",  # soft blue
-    "M3" = "#A1D99B"   # soft green
-  )
-  
-  p <- ggplot(df_plot, aes(x = period, y = error, fill = method)) +
-    geom_boxplot(
-      position = position_dodge(width = 0.75),
-      width = box_width,
-      outlier.size = outlier_size,
-      outlier.alpha = 0.75
-    ) +
-    scale_fill_manual(values = method_colours[methods], drop = FALSE) +
-    labs(
-      x = NULL,
-      y = "Loading estimation error",
-      title = paste0(
-        paste(levels(droplevels(df_plot$mode)), collapse = ", "),
-        ": Time = ", Time,
-        ", (p1,p2,p3) = (", dim_obs_chr, ")"
-      ),
-      fill = NULL
-    ) +
-    theme_bw(base_size = 12) +
-    theme(
-      plot.title = element_text(size = 12, face = "bold"),
-      axis.title.y = element_text(size = 12),
-      axis.text.x = element_text(size = 12),
-      axis.text.y = element_text(size = 12),
-      legend.text = element_text(size = 12),
-      legend.title = element_text(size = 12),
-      strip.text = element_text(size = 12),
-      legend.position = "bottom",
-      panel.grid.minor = element_blank()
-    )
-  
-  if (length(unique(df_plot$mode)) > 1L) {
-    p <- p + facet_wrap(~ mode, nrow = 1)
-  }
-  
-  if (!is.null(y_lim)) {
-    p <- p + coord_cartesian(ylim = y_lim)
-  }
-  
-
-  p
-}
-
-
-plot_reest_box_all <- function(reest_obj,
-                               Time_list,
-                               dim_obs_list,
-                               mode = c(2, 3),
-                               methods = c("M1", "M2", "M3"),
-                               use_valid_idt_only = TRUE,
-                               pool_type = c("stack", "average"),
-                               y_lim = FALSE,
-                               outlier_size = 1.2,
-                               box_width = 0.65,
-                               title_suffix = NULL) {
-  pool_type <- match.arg(pool_type)
-  
-  methods <- unique(methods)
-  methods <- match.arg(methods, choices = c("M1", "M2", "M3"), several.ok = TRUE)
-  
-  mode <- as.integer(mode)
-  if (!all(mode %in% c(1L, 2L, 3L))) {
-    stop("`mode` must be one or more of 1, 2, 3.")
-  }
-  
-  loss_df <- if (use_valid_idt_only) {
-    reest_obj$loss_mode_all_idt
-  } else {
-    reest_obj$loss_mode_all
-  }
-  
-  if (is.null(loss_df) || nrow(loss_df) == 0L) {
-    stop("No loss data available in `reest_obj`.")
-  }
-  
-  if (!isTRUE(y_lim)) {
-    y_lim <- "free_y"
-  } else {
-    y_lim <- "fixed"
+  if (length(Time_select) != 1L) {
+    stop("`Time_select` must be a single value.")
   }
   
   dim_obs_chr_list <- vapply(dim_obs_list, paste, collapse = "x", FUN.VALUE = character(1))
   
   df_sub <- loss_df %>%
-    dplyr::filter(Time %in% !!Time_list,
-                  dim_obs %in% !!dim_obs_chr_list,
-                  mode %in% !!mode)
+    dplyr::filter(
+      Time == !!Time_select,
+      dim_obs %in% !!dim_obs_chr_list,
+      mode %in% !!mode
+    )
+  
+  if (nrow(df_sub) == 0L) {
+    stop("No matching rows found for the given `Time_select`, `dim_obs_list`, and `mode`.")
+  }
+  
+  df_list <- list(
+    df_sub %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        box_type = "M1 pre",
+        error = M1_pre
+      ),
+    df_sub %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        box_type = "M1 post",
+        error = M1_post
+      ),
+    df_sub %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        box_type = "M2",
+        error = M2_pool
+      )
+  )
+  
+  if (isTRUE(show_M3)) {
+    df_list[[length(df_list) + 1L]] <- df_sub %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        box_type = "M3",
+        error = 0.5 * (M3_pre + M3_post)
+      )
+  }
+  
+  box_levels <- c("M1 pre", "M1 post", "M2")
+  if (isTRUE(show_M3)) box_levels <- c(box_levels, "M3")
+  
+  dim_obs_labels <- paste0("(", gsub("x", ",", dim_obs_chr_list), ")")
+  
+  df_plot <- dplyr::bind_rows(df_list) %>%
+    dplyr::filter(!is.na(error)) %>%
+    dplyr::mutate(
+      box_type = factor(box_type, levels = box_levels),
+      mode = factor(
+        mode,
+        levels = c(2, 3),
+        labels = c("Mode 2", "Mode 3")
+      ),
+      Time = factor(
+        Time,
+        levels = Time_select,
+        labels = paste0("T = ", Time_select)
+      ),
+      dim_obs = factor(
+        dim_obs,
+        levels = dim_obs_chr_list,
+        labels = dim_obs_labels
+      ),
+      x_dummy = ""
+    )
+  
+  box_colours <- c(
+    "M1 pre"  = "#F4B6C2",
+    "M1 post" = "#D97A9A",
+    "M2"      = "#A1D99B",
+    "M3"      = "#9ECAE1"
+  )
+  
+  title_main <- paste0(
+    paste(levels(droplevels(df_plot$mode)), collapse = ", "),
+    ": Estimated factor numbers, T = ", Time_select
+  )
+  if (!is.null(title_suffix) && nzchar(title_suffix)) {
+    title_main <- paste0(title_main, ": ", title_suffix)
+  }
+  
+  p <- ggplot(df_plot, aes(x = x_dummy, y = error, fill = box_type)) +
+    geom_boxplot(
+      position = position_dodge(width = 0.8),
+      width = box_width,
+      outlier.size = outlier_size,
+      outlier.alpha = 0.75
+    ) +
+    scale_fill_manual(
+      values = box_colours[box_levels],
+      breaks = box_levels,
+      drop = TRUE
+    ) +
+    labs(
+      x = NULL,
+      y = "Loading estimation error",
+      fill = NULL,
+      title = title_main
+    ) +
+    facet_grid(. ~ dim_obs, scales = "fixed") +
+    theme_bw(base_size = 11) +
+    theme(
+      plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+      axis.title.y = element_text(size = 12),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_text(size = 10),
+      legend.text = element_text(size = 12),
+      strip.background = element_blank(),
+      strip.text.x = element_text(size = 10, face = "bold"),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    )
+  
+  if (!is.null(y_lim)) {
+    if (!is.numeric(y_lim) || length(y_lim) != 2L) {
+      stop("`y_lim` must be NULL or a numeric vector of length 2.")
+    }
+    p <- p + coord_cartesian(ylim = y_lim)
+  }
+  
+  p
+}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+plot_reest_box_all <- function(reest_obj,
+                               Time_list,
+                               dim_obs_list,
+                               mode = c(2, 3),
+                               show_M3 = FALSE,
+                               y_lim = c(0, 0.1),
+                               outlier_size = 1.2,
+                               box_width = 0.65,
+                               title_suffix = NULL) {
+  mode <- as.integer(mode)
+  if (!all(mode %in% c(2L, 3L))) {
+    stop("`mode` must be chosen from 2 and 3 only.")
+  }
+  
+  loss_df <- reest_obj$loss_mode_all_idt
+  
+  if (is.null(loss_df) || nrow(loss_df) == 0L) {
+    stop("No loss data available in `reest_obj$loss_mode_all_idt`.")
+  }
+  
+  dim_obs_chr_list <- vapply(dim_obs_list, paste, collapse = "x", FUN.VALUE = character(1))
+  
+  df_sub <- loss_df %>%
+    dplyr::filter(
+      Time %in% !!Time_list,
+      dim_obs %in% !!dim_obs_chr_list,
+      mode %in% !!mode
+    )
   
   if (nrow(df_sub) == 0L) {
     stop("No matching rows found for the given `Time_list`, `dim_obs_list`, and `mode`.")
   }
   
-  main_cols <- as.vector(outer(methods, c("pre", "post"), paste, sep = "_"))
+  df_list <- list(
+    df_sub %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        box_type = "M1 pre",
+        error = M1_pre
+      ),
+    df_sub %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        box_type = "M1 post",
+        error = M1_post
+      ),
+    df_sub %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        box_type = "M2",
+        error = M2_pool
+      )
+  )
   
-  df_long_main <- df_sub %>%
-    dplyr::select(sim, Time, dim_obs, mode, dplyr::all_of(main_cols)) %>%
-    tidyr::pivot_longer(
-      cols = dplyr::all_of(main_cols),
-      names_to = c("method", "period"),
-      names_sep = "_",
-      values_to = "error"
-    )
-  
-  if (pool_type == "stack") {
-    df_pool <- df_long_main %>%
-      dplyr::mutate(period = "pool")
-  } else {
-    pool_cols <- as.vector(outer(methods, c("pre", "post"), paste, sep = "_"))
-    
-    df_pool <- df_sub %>%
-      dplyr::select(sim, Time, dim_obs, mode, dplyr::all_of(pool_cols))
-    
-    for (m in methods) {
-      df_pool[[m]] <- 0.5 * (df_pool[[paste0(m, "_pre")]] + df_pool[[paste0(m, "_post")]])
-    }
-    
-    df_pool <- df_pool %>%
-      dplyr::select(sim, Time, dim_obs, mode, dplyr::all_of(methods)) %>%
-      tidyr::pivot_longer(
-        cols = dplyr::all_of(methods),
-        names_to = "method",
-        values_to = "error"
-      ) %>%
-      dplyr::mutate(period = "pool")
+  if (isTRUE(show_M3)) {
+    df_list[[length(df_list) + 1L]] <- df_sub %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        box_type = "M3",
+        error = 0.5 * (M3_pre + M3_post)
+      )
   }
   
-  df_plot <- dplyr::bind_rows(df_long_main, df_pool) %>%
+  box_levels <- c("M1 pre", "M1 post", "M2")
+  if (isTRUE(show_M3)) box_levels <- c(box_levels, "M3")
+  
+  dim_obs_labels <- paste0("(", gsub("x", ",", dim_obs_chr_list), ")")
+  
+  df_plot <- dplyr::bind_rows(df_list) %>%
+    dplyr::filter(!is.na(error)) %>%
     dplyr::mutate(
-      period = factor(period, levels = c("pre", "post", "pool"),
-                      labels = c("Pre", "Post", "Pool")),
-      method = factor(method, levels = c("M1", "M2", "M3")),
-      mode = factor(mode, levels = c(1, 2, 3),
-                    labels = c("Mode 1", "Mode 2", "Mode 3")),
-      Time = factor(Time, levels = Time_list,
-                    labels = paste0("T = ", Time_list)),
-      dim_obs = factor(dim_obs, levels = dim_obs_chr_list,
-                       labels = paste0("(", gsub("x", ",", dim_obs_chr_list), ")"))
+      box_type = factor(box_type, levels = box_levels),
+      mode = factor(
+        mode,
+        levels = c(2, 3),
+        labels = c("Mode 2", "Mode 3")
+      ),
+      Time = factor(
+        Time,
+        levels = Time_list,
+        labels = paste0("T = ", Time_list)
+      ),
+      dim_obs = factor(
+        dim_obs,
+        levels = dim_obs_chr_list,
+        labels = dim_obs_labels
+      ),
+      x_dummy = ""
     )
   
-  method_colours <- c(
-    "M1" = "#F4B6C2",
-    "M2" = "#9ECAE1",
-    "M3" = "#A1D99B"
+  box_colours <- c(
+    "M1 pre"  = "#F4B6C2",
+    "M1 post" = "#D97A9A",
+    "M2"      = "#A1D99B",
+    "M3"      = "#9ECAE1"
   )
   
   title_main <- paste(levels(droplevels(df_plot$mode)), collapse = ", ")
@@ -760,29 +789,33 @@ plot_reest_box_all <- function(reest_obj,
     title_main <- paste0(title_main, ": ", title_suffix)
   }
   
-  p <- ggplot(df_plot, aes(x = period, y = error, fill = method)) +
+  p <- ggplot(df_plot, aes(x = x_dummy, y = error, fill = box_type)) +
     geom_boxplot(
-      position = position_dodge(width = 0.75),
+      position = position_dodge(width = 0.8),
       width = box_width,
       outlier.size = outlier_size,
       outlier.alpha = 0.75
     ) +
-    scale_fill_manual(values = method_colours[methods], drop = FALSE) +
+    scale_fill_manual(
+      values = box_colours[box_levels],
+      breaks = box_levels,
+      drop = TRUE
+    ) +
     labs(
       x = NULL,
       y = "Loading estimation error",
       fill = NULL,
       title = title_main
     ) +
-    facet_grid(dim_obs ~ Time, scales = y_lim) +
+    facet_grid(dim_obs ~ Time, scales = "free_y") +
     theme_bw(base_size = 11) +
     theme(
       plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
       axis.title.y = element_text(size = 12),
-      axis.text.x = element_text(size = 10),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
       axis.text.y = element_text(size = 10),
       legend.text = element_text(size = 10),
-      legend.title = element_text(size = 10),
       strip.background = element_blank(),
       strip.text.x = element_text(size = 10, face = "bold"),
       strip.text.y = element_text(size = 10, face = "bold", angle = 270),
@@ -791,9 +824,45 @@ plot_reest_box_all <- function(reest_obj,
       panel.grid.minor = element_blank()
     )
   
+  ## y_lim can be:
+  ## 1. NULL -> do nothing
+  ## 2. numeric vector length 2 -> same limit for all rows
+  ## 3. list of length = number of rows -> row-specific limits
+  if (!is.null(y_lim)) {
+    n_row <- length(dim_obs_labels)
+    
+    if (is.numeric(y_lim) && length(y_lim) == 2L) {
+      p <- p + coord_cartesian(ylim = y_lim)
+    } else if (is.list(y_lim)) {
+      if (!requireNamespace("ggh4x", quietly = TRUE)) {
+        stop("Package `ggh4x` is required for row-specific y limits.")
+      }
+      if (length(y_lim) != n_row) {
+        stop("When `y_lim` is a list, its length must equal length(dim_obs_list).")
+      }
+      
+      y_scales <- lapply(seq_len(n_row), function(i) {
+        lim_i <- y_lim[[i]]
+        if (is.null(lim_i)) {
+          ggplot2::scale_y_continuous()
+        } else {
+          if (!is.numeric(lim_i) || length(lim_i) != 2L) {
+            stop("Each element of `y_lim` must be NULL or a numeric vector of length 2.")
+          }
+          ggplot2::scale_y_continuous(limits = lim_i)
+        }
+      })
+      
+      p <- p + ggh4x::facetted_pos_scales(
+        y = y_scales
+      )
+    } else {
+      stop("`y_lim` must be NULL, a numeric vector of length 2, or a list.")
+    }
+  }
+  
   p
 }
-
 
 
 check_outliers <- function(reest_obj,
@@ -802,86 +871,95 @@ check_outliers <- function(reest_obj,
                            mode = 2,
                            methods = c("M1", "M2", "M3"),
                            error_lim = c(0.1, Inf),
-                           use_valid_idt_only = TRUE,
-                           include_pool = TRUE,
+                           include_M3 = TRUE,
                            sort_by_max_error = TRUE) {
+  methods <- unique(methods)
   methods <- match.arg(methods, choices = c("M1", "M2", "M3"), several.ok = TRUE)
   
+  mode <- as.integer(mode)
+  if (!mode %in% c(2L, 3L)) {
+    stop("`mode` must be 2 or 3.")
+  }
+  
   if (!is.numeric(error_lim) || length(error_lim) != 2L) {
-    stop("error_lim must be a numeric vector of length 2.")
+    stop("`error_lim` must be a numeric vector of length 2.")
   }
   if (error_lim[1] > error_lim[2]) {
-    stop("error_lim must satisfy error_lim[1] <= error_lim[2].")
+    stop("`error_lim` must satisfy error_lim[1] <= error_lim[2].")
   }
   
-  loss_df <- if (use_valid_idt_only) {
-    reest_obj$loss_mode_all_idt
-  } else {
-    reest_obj$loss_mode_all
-  }
-  
+  loss_df <- reest_obj$loss_mode_all_idt
   meta_df <- reest_obj$meta_all
   dim_obs_chr <- paste(dim_obs, collapse = "x")
   
   df_sub <- loss_df %>%
-    filter(Time == !!Time, dim_obs == !!dim_obs_chr, mode == !!mode)
+    dplyr::filter(Time == !!Time, dim_obs == !!dim_obs_chr, mode == !!mode)
   
   if (nrow(df_sub) == 0L) {
     stop("No matching rows found.")
   }
   
-  cols_use <- as.vector(outer(methods, c("pre", "post"), paste, sep = "_"))
+  df_list <- list()
   
-  df_check <- df_sub %>%
-    select(sim, all_of(cols_use))
-  
-  if (include_pool) {
-    for (m in methods) {
-      df_check[[paste0(m, "_pool")]] <- 0.5 * (df_sub[[paste0(m, "_pre")]] + df_sub[[paste0(m, "_post")]])
-    }
+  if ("M1" %in% methods) {
+    df_list[["M1_pre"]] <- df_sub %>%
+      dplyr::transmute(sim, box_type = "M1_pre", error = M1_pre)
+    
+    df_list[["M1_post"]] <- df_sub %>%
+      dplyr::transmute(sim, box_type = "M1_post", error = M1_post)
   }
   
+  if ("M2" %in% methods) {
+    df_list[["M2"]] <- df_sub %>%
+      dplyr::transmute(sim, box_type = "M2", error = M2_pool)
+  }
+  
+  if ("M3" %in% methods && isTRUE(include_M3)) {
+    df_list[["M3"]] <- df_sub %>%
+      dplyr::transmute(sim, box_type = "M3", error = 0.5 * (M3_pre + M3_post))
+  }
+  
+  df_check <- dplyr::bind_rows(df_list)
+  
   sim_keep <- df_check %>%
-  pivot_longer(
-    cols = -sim,
-    names_to = c("method", "period"),
-    names_sep = "_",
-    values_to = "error"
-  ) %>%
-  filter(!is.na(error),
-         error >= error_lim[1],
-         error <= error_lim[2]) %>%
-  group_by(sim) %>%
-  summarise(max_error = max(error), .groups = "drop")
-
-if (nrow(sim_keep) == 0L) {
-  message(
-    "No outliers found for Time = ", Time,
-    ", dim_obs = ", dim_obs_chr,
-    ", mode = ", mode,
-    " within error_lim = [", error_lim[1], ", ", error_lim[2], "]."
-  )
-  return(data.frame())
-}
+    dplyr::filter(
+      !is.na(error),
+      error >= error_lim[1],
+      error <= error_lim[2]
+    ) %>%
+    dplyr::group_by(sim) %>%
+    dplyr::summarise(
+      max_error = max(error),
+      which_box = paste(box_type[which.max(error)], collapse = ", "),
+      .groups = "drop"
+    )
+  
+  if (nrow(sim_keep) == 0L) {
+    message(
+      "No outliers found for Time = ", Time,
+      ", dim_obs = ", dim_obs_chr,
+      ", mode = ", mode,
+      " within error_lim = [", error_lim[1], ", ", error_lim[2], "]."
+    )
+    return(data.frame())
+  }
   
   out <- meta_df %>%
-    filter(Time == !!Time, dim_obs == !!dim_obs_chr) %>%
-    semi_join(sim_keep, by = "sim") %>%
-    select(
+    dplyr::filter(Time == !!Time, dim_obs == !!dim_obs_chr) %>%
+    dplyr::semi_join(sim_keep, by = "sim") %>%
+    dplyr::select(
       sim,
+      valid_detect, valid_idt,
+      cp_hat, cp_err,
+      mode1_changed, mode2_changed, mode3_changed,
       r1_hat, r2_hat, r3_hat,
       r1_hat_pre, r2_hat_pre, r3_hat_pre,
       r1_hat_post, r2_hat_post, r3_hat_post
     )
   
-  if (sort_by_max_error) {
-    out <- sim_keep %>%
-      arrange(desc(max_error)) %>%
-      select(-max_error) %>%
-      left_join(out, by = "sim")
-  } else {
-    out <- out %>% arrange(sim)
-  }
+  out <- sim_keep %>%
+    {if (sort_by_max_error) dplyr::arrange(., dplyr::desc(max_error)) else dplyr::arrange(., sim)} %>%
+    dplyr::left_join(out, by = "sim")
   
   out
 }

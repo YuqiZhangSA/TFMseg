@@ -261,19 +261,30 @@ multi_hist_subplot <- function(..., Time_list, theta_coef,
                                rep = 100,
                                acc = 2,
                                compare_dataset = TRUE,
-                               dataset_names = c("Complete","Extract"),
+                               dataset_names = c("Complete", "Extract"),
                                dataset_alpha = 0.5,
-                               dataset_position = "identity" #c("identity", "dodge")
-                               ) {
+                               dataset_position = c("identity", "dodge"),
+                               setting = c("S1", "S2")) {
   
   dataset_position <- match.arg(dataset_position)
+  setting <- match.arg(setting)
   
   dots <- list(...)
   
+  get_df <- function(x) {
+    if (is.data.frame(x)) {
+      return(x)
+    }
+    if (is.list(x) && !is.null(x$cp_est_df) && is.data.frame(x$cp_est_df)) {
+      return(x$cp_est_df)
+    }
+    return(NULL)
+  }
+  
   dfs <- lapply(seq_along(dots), function(i) {
     x <- dots[[i]]
-    df <- if (!is.null(x$cp_est_df)) x$cp_est_df else x
-    if (!is.data.frame(df)) return(NULL)
+    df <- get_df(x)
+    if (is.null(df)) return(NULL)
     
     nm <- if (!is.null(dataset_names) && length(dataset_names) >= i) {
       dataset_names[[i]]
@@ -286,18 +297,18 @@ multi_hist_subplot <- function(..., Time_list, theta_coef,
   
   dfs <- Filter(Negate(is.null), dfs)
   if (!length(dfs)) {
-    stop("Pass at least one object containing cp_est_df (or a cp_est_df data.frame).")
+    stop("Pass at least one data.frame or one object containing a data.frame named cp_est_df.")
   }
   
-  result <- bind_rows(dfs)
+  result <- dplyr::bind_rows(dfs)
   
   if (!is.null(source_names)) {
-    result <- filter(result, method %in% source_names)
+    result <- dplyr::filter(result, method %in% source_names)
   }
   
   if (!is.null(dim_obs_list)) {
     dim_keep <- vapply(dim_obs_list, paste, collapse = "x", FUN.VALUE = character(1))
-    result <- filter(result, dim_obs %in% dim_keep)
+    result <- dplyr::filter(result, dim_obs %in% dim_keep)
   } else {
     dim_keep <- sort(unique(result$dim_obs))
   }
@@ -305,8 +316,8 @@ multi_hist_subplot <- function(..., Time_list, theta_coef,
   time_labels <- paste0("T=", Time_list)
   
   make_true_cp <- function(Tvals) {
-    tibble(Tval = Tvals) %>%
-      mutate(
+    tibble::tibble(Tval = Tvals) %>%
+      dplyr::mutate(
         w  = round(acc * log(Tval)),
         i1 = floor(theta_coef[1] * Tval),
         i2 = floor(theta_coef[2] * Tval),
@@ -322,11 +333,11 @@ multi_hist_subplot <- function(..., Time_list, theta_coef,
         r3 = pmin(1, (i3 + w) / Tval),
         Time = factor(Tval, levels = Time_list, labels = time_labels)
       ) %>%
-      select(Time, starts_with("sc"), starts_with("l"), starts_with("r")) %>%
-      pivot_longer(cols = -Time, names_to = "key", values_to = "x") %>%
-      mutate(
+      dplyr::select(Time, dplyr::starts_with("sc"), dplyr::starts_with("l"), dplyr::starts_with("r")) %>%
+      tidyr::pivot_longer(cols = -Time, names_to = "key", values_to = "x") %>%
+      dplyr::mutate(
         cp_name = gsub("^[slr]", "sc", key),
-        line_type = case_when(
+        line_type = dplyr::case_when(
           substr(key, 1, 2) == "sc" ~ "centre",
           substr(key, 1, 1) == "l" ~ "left",
           TRUE ~ "right"
@@ -334,11 +345,11 @@ multi_hist_subplot <- function(..., Time_list, theta_coef,
       )
   }
   
-  do_compare_dataset <- isTRUE(compare_dataset) && n_distinct(result$Dataset) > 1L
+  do_compare_dataset <- isTRUE(compare_dataset) && dplyr::n_distinct(result$Dataset) > 1L
   
   cp_est_df_plot <- result %>%
-    filter(!is.na(scaled_cp), Time %in% Time_list) %>%
-    mutate(
+    dplyr::filter(!is.na(scaled_cp), Time %in% Time_list) %>%
+    dplyr::mutate(
       Time = factor(Time, levels = Time_list, labels = time_labels),
       Method = factor(method, levels = source_names),
       dim_obs = factor(dim_obs, levels = dim_keep),
@@ -346,20 +357,22 @@ multi_hist_subplot <- function(..., Time_list, theta_coef,
     )
   
   true_cp_df <- make_true_cp(Time_list)
-  true_cp_centre <- filter(true_cp_df, line_type == "centre")
-  true_cp_bounds <- filter(true_cp_df, line_type != "centre")
+  true_cp_centre <- dplyr::filter(true_cp_df, line_type == "centre")
+  true_cp_bounds <- dplyr::filter(true_cp_df, line_type != "centre")
   
   dim_labels <- setNames(
     paste0("(", gsub("x", ",", dim_keep), ")"),
     dim_keep
   )
   
-  p <- ggplot(cp_est_df_plot, aes(x = scaled_cp))
+  x_lab <- paste0("Estimated change points (", setting, ")")
+  
+  p <- ggplot2::ggplot(cp_est_df_plot, ggplot2::aes(x = scaled_cp))
   
   if (do_compare_dataset) {
     p <- p +
-      geom_histogram(
-        aes(y = after_stat(count), fill = Dataset),
+      ggplot2::geom_histogram(
+        ggplot2::aes(y = after_stat(count), fill = Dataset),
         binwidth = binwidth,
         center = theta_coef[1],
         colour = "black",
@@ -368,8 +381,8 @@ multi_hist_subplot <- function(..., Time_list, theta_coef,
       )
   } else {
     p <- p +
-      geom_histogram(
-        aes(y = after_stat(count)),
+      ggplot2::geom_histogram(
+        ggplot2::aes(y = after_stat(count)),
         binwidth = binwidth,
         center = theta_coef[1],
         colour = "black",
@@ -379,53 +392,53 @@ multi_hist_subplot <- function(..., Time_list, theta_coef,
   }
   
   p +
-    geom_vline(
+    ggplot2::geom_vline(
       data = true_cp_centre,
-      aes(xintercept = x, group = cp_name),
+      ggplot2::aes(xintercept = x, group = cp_name),
       linetype = "dashed",
       colour = "red",
       linewidth = 0.6,
       inherit.aes = FALSE
     ) +
-    geom_vline(
+    ggplot2::geom_vline(
       data = true_cp_bounds,
-      aes(xintercept = x, group = interaction(cp_name, line_type)),
+      ggplot2::aes(xintercept = x, group = interaction(cp_name, line_type)),
       linetype = "dotted",
       colour = "steelblue1",
       linewidth = 0.4,
       inherit.aes = FALSE
     ) +
-    facet_grid(
-      rows = vars(dim_obs),
-      cols = vars(Time, Method),
-      labeller = labeller(dim_obs = dim_labels)
+    ggplot2::facet_grid(
+      rows = ggplot2::vars(dim_obs),
+      cols = ggplot2::vars(Time, Method),
+      labeller = ggplot2::labeller(dim_obs = dim_labels)
     ) +
-    scale_x_continuous(
+    ggplot2::scale_x_continuous(
       limits = c(0, 1),
       breaks = c(0, 0.25, 0.5, 0.75, 1)
     ) +
-    scale_y_continuous(
+    ggplot2::scale_y_continuous(
       limits = c(0, rep),
       breaks = pretty(c(0, rep)),
-      oob = squish
+      oob = scales::squish
     ) +
-    labs(
-      x = "Estimated change points",
+    ggplot2::labs(
+      x = x_lab,
       y = "Frequencies"
     ) +
-    theme_bw() +
-    theme(
-      panel.border = element_blank(),
-      axis.line = element_line(colour = "black"),
-      panel.grid.major = element_line(colour = "grey90"),
-      panel.grid.minor = element_line(colour = "grey95"),
-      strip.background = element_blank(),
-      strip.text.x = element_text(face = "bold"),
-      strip.text.y = element_text(face = "bold"),
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      panel.border = ggplot2::element_blank(),
+      axis.line = ggplot2::element_line(colour = "black"),
+      panel.grid.major = ggplot2::element_line(colour = "grey90"),
+      panel.grid.minor = ggplot2::element_line(colour = "grey95"),
+      strip.background = ggplot2::element_blank(),
+      strip.text.x = ggplot2::element_text(face = "bold"),
+      strip.text.y = ggplot2::element_text(face = "bold"),
+      axis.title.x = ggplot2::element_text(margin = ggplot2::margin(t = 14)),
       legend.position = if (do_compare_dataset) "bottom" else "none"
     )
 }
-
 
 
 multi_hist_subplot_method <- function(
@@ -443,10 +456,12 @@ multi_hist_subplot_method <- function(
     scenario_names = c("Complete data", "Missingness"),
     dataset_names = c("Complete", "Extract"),
     dataset_alpha = 0.5,
-    dataset_position = "identity"
+    dataset_position = "identity",
+    setting = c("S1", "S2")
 ) {
   
   dataset_position <- match.arg(dataset_position, c("identity", "dodge"))
+  setting <- match.arg(setting)
   
   get_df <- function(x) {
     if (!is.null(x$cp_est_df)) x$cp_est_df else x
@@ -530,6 +545,8 @@ multi_hist_subplot_method <- function(
     dim_keep
   )
   
+  x_lab <- paste0("Estimated change points (", setting, ")")
+  
   p <- ggplot(cp_est_df_plot, aes(x = scaled_cp))
   
   p <- p +
@@ -572,7 +589,7 @@ multi_hist_subplot_method <- function(
       oob = squish
     ) +
     labs(
-      x = "Estimated change points",
+      x = x_lab,
       y = "Frequencies"
     ) +
     theme_bw() +
@@ -584,6 +601,7 @@ multi_hist_subplot_method <- function(
       strip.background = element_blank(),
       strip.text.x = element_text(face = "bold"),
       strip.text.y = element_text(face = "bold"),
+      axis.title.x = element_text(margin = margin(t = 14)),
       legend.position = "bottom"
     )
   
