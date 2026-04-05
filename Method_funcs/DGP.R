@@ -49,14 +49,14 @@ dgp_general <- function(
   if (!dep) coeff <- 0
   
   # -------- helpers --------
-  runit_noise <- function(n) {
-    if (dist == "Gaussian") rnorm(n) else {
+  runit_noise <- function(n, sd = 1) {
+    if (dist == "Gaussian") rnorm(n, sd = sd) else {
       df <- 7
       rt(n, df = df) * sqrt((df - 2) / df)  # unit variance
     }
   }
   matrixvariate_draw <- function(shape, size)
-    array(runit_noise(prod(shape) * size), c(shape, size))
+    array(runit_noise(prod(shape) * size, sd = 1), c(shape, size))
   
   VAR1_vec <- function(n, size, coeff) {
     stopifnot(abs(coeff) < 1)
@@ -103,6 +103,7 @@ dgp_general <- function(
   loadings_current <- vector("list", M)
   for (m in seq_len(M)) {
     loadings_current[[m]] <- matrix(
+      #rnorm(dim_obs[m] * dim_latent[m]),
       runif(dim_obs[m] * dim_latent[m], -1, 1),
       nrow = dim_obs[m]
     )

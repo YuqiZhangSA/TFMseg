@@ -718,14 +718,100 @@ simu_ret <- function(methods = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
 
 
 
+# extract_accurate <- function(res,
+#                              Time_list = NULL,
+#                              dim_obs_list = NULL,
+#                              source_names = NULL,
+#                              exact_3_change = TRUE,
+#                              sep_scaled = 0.1) {
+#   stopifnot(is.list(res), !is.null(res$df_raw), is.data.frame(res$df_raw))
+#   stopifnot(!is.null(res$cp_est_df), is.data.frame(res$cp_est_df))
+#   
+#   df_raw <- res$df_raw
+#   cp_df  <- res$cp_est_df
+#   
+#   if (!is.null(Time_list)) {
+#     df_raw <- df_raw %>% dplyr::filter(Time %in% Time_list)
+#     cp_df  <- cp_df  %>% dplyr::filter(Time %in% Time_list)
+#   }
+#   if (!is.null(source_names)) {
+#     df_raw <- df_raw %>% dplyr::filter(method %in% source_names)
+#     cp_df  <- cp_df  %>% dplyr::filter(method %in% source_names)
+#   }
+#   if (!is.null(dim_obs_list)) {
+#     dim_keep <- vapply(dim_obs_list, paste, collapse = "x", FUN.VALUE = character(1))
+#     df_raw <- df_raw %>% dplyr::filter(dim_obs %in% dim_keep)
+#     cp_df  <- cp_df  %>% dplyr::filter(dim_obs %in% dim_keep)
+#   }
+#   
+#   df_good <- df_raw %>%
+#     dplyr::filter(acc1 == 1, acc2 == 1, acc3 == 1)
+#   
+#   if (isTRUE(exact_3_change)) {
+#     if (!("m0" %in% names(df_good))) stop("exact_3_change=TRUE needs column 'm0' in res$df_raw.")
+#     df_good <- df_good %>% dplyr::filter(m0 == 1)
+#   }
+#   
+#   keys <- df_good %>%
+#     dplyr::transmute(Time, dim_obs, method, sim = rep_id) %>%
+#     dplyr::distinct()
+#   
+#   cp_good <- cp_df %>%
+#     dplyr::semi_join(keys, by = c("Time", "dim_obs", "method", "sim")) %>%
+#     dplyr::arrange(Time, dim_obs, method, sim, scaled_cp)
+#   
+#   if (!is.null(sep_scaled)) {
+#     if (!is.numeric(sep_scaled) || length(sep_scaled) != 1L || sep_scaled <= 0 || sep_scaled >= 1) {
+#       stop("sep_scaled must be a scalar in (0,1).")
+#     }
+#     
+#     sep_keys <- cp_good %>%
+#       dplyr::filter(is.finite(scaled_cp)) %>%
+#       dplyr::group_by(Time, dim_obs, method, sim) %>%
+#       dplyr::summarise(
+#         n_cp = dplyr::n_distinct(scaled_cp),
+#         min_gap_scaled = {
+#           sc <- sort(unique(scaled_cp))
+#           if (length(sc) <= 1L) Inf else min(diff(sc))
+#         },
+#         .groups = "drop"
+#       ) %>%
+#       dplyr::mutate(pass_sep = (min_gap_scaled >= sep_scaled))
+#     
+#     keys <- keys %>%
+#       dplyr::inner_join(
+#         sep_keys %>% dplyr::filter(pass_sep) %>% dplyr::select(Time, dim_obs, method, sim),
+#         by = c("Time", "dim_obs", "method", "sim")
+#       )
+#     
+#     df_good <- df_good %>%
+#       dplyr::semi_join(keys, by = c("Time", "dim_obs", "method", "rep_id" = "sim"))
+#     
+#     cp_good <- cp_good %>%
+#       dplyr::semi_join(keys, by = c("Time", "dim_obs", "method", "sim"))
+#   }
+#   
+#   out <- res
+#   out$df_raw <- df_good
+#   out$cp_est_df <- cp_good
+#   out
+# }
+
 extract_accurate <- function(res,
                              Time_list = NULL,
                              dim_obs_list = NULL,
                              source_names = NULL,
-                             exact_3_change = TRUE,
-                             sep_scaled = 0.1) {
+                             q = 3L) {
   stopifnot(is.list(res), !is.null(res$df_raw), is.data.frame(res$df_raw))
   stopifnot(!is.null(res$cp_est_df), is.data.frame(res$cp_est_df))
+  
+  if (!is.null(q)) {
+    if (!is.numeric(q) || length(q) != 1L || is.na(q) ||
+        q < 1 || q != as.integer(q)) {
+      stop("`q` must be NULL or a positive integer.")
+    }
+    q <- as.integer(q)
+  }
   
   df_raw <- res$df_raw
   cp_df  <- res$cp_est_df
@@ -734,22 +820,35 @@ extract_accurate <- function(res,
     df_raw <- df_raw %>% dplyr::filter(Time %in% Time_list)
     cp_df  <- cp_df  %>% dplyr::filter(Time %in% Time_list)
   }
+  
   if (!is.null(source_names)) {
     df_raw <- df_raw %>% dplyr::filter(method %in% source_names)
     cp_df  <- cp_df  %>% dplyr::filter(method %in% source_names)
   }
+  
   if (!is.null(dim_obs_list)) {
     dim_keep <- vapply(dim_obs_list, paste, collapse = "x", FUN.VALUE = character(1))
     df_raw <- df_raw %>% dplyr::filter(dim_obs %in% dim_keep)
     cp_df  <- cp_df  %>% dplyr::filter(dim_obs %in% dim_keep)
   }
   
-  df_good <- df_raw %>%
-    dplyr::filter(acc1 == 1, acc2 == 1, acc3 == 1)
+  df_good <- df_raw
   
-  if (isTRUE(exact_3_change)) {
-    if (!("m0" %in% names(df_good))) stop("exact_3_change=TRUE needs column 'm0' in res$df_raw.")
-    df_good <- df_good %>% dplyr::filter(m0 == 1)
+  if (!is.null(q)) {
+    acc_cols <- paste0("acc", seq_len(q))
+    miss_acc <- setdiff(acc_cols, names(df_good))
+    
+    if (length(miss_acc) > 0L) {
+      stop(
+        sprintf(
+          "For q = %d, the following columns are missing in res$df_raw: %s",
+          q, paste(miss_acc, collapse = ", ")
+        )
+      )
+    }
+    
+    df_good <- df_good %>%
+      dplyr::filter(dplyr::if_all(dplyr::all_of(acc_cols), ~ . == 1))
   }
   
   keys <- df_good %>%
@@ -760,41 +859,9 @@ extract_accurate <- function(res,
     dplyr::semi_join(keys, by = c("Time", "dim_obs", "method", "sim")) %>%
     dplyr::arrange(Time, dim_obs, method, sim, scaled_cp)
   
-  if (!is.null(sep_scaled)) {
-    if (!is.numeric(sep_scaled) || length(sep_scaled) != 1L || sep_scaled <= 0 || sep_scaled >= 1) {
-      stop("sep_scaled must be a scalar in (0,1).")
-    }
-    
-    sep_keys <- cp_good %>%
-      dplyr::filter(is.finite(scaled_cp)) %>%
-      dplyr::group_by(Time, dim_obs, method, sim) %>%
-      dplyr::summarise(
-        n_cp = dplyr::n_distinct(scaled_cp),
-        min_gap_scaled = {
-          sc <- sort(unique(scaled_cp))
-          if (length(sc) <= 1L) Inf else min(diff(sc))
-        },
-        .groups = "drop"
-      ) %>%
-      dplyr::mutate(pass_sep = (min_gap_scaled >= sep_scaled))
-    
-    keys <- keys %>%
-      dplyr::inner_join(
-        sep_keys %>% dplyr::filter(pass_sep) %>% dplyr::select(Time, dim_obs, method, sim),
-        by = c("Time", "dim_obs", "method", "sim")
-      )
-    
-    df_good <- df_good %>%
-      dplyr::semi_join(keys, by = c("Time", "dim_obs", "method", "rep_id" = "sim"))
-    
-    cp_good <- cp_good %>%
-      dplyr::semi_join(keys, by = c("Time", "dim_obs", "method", "sim"))
-  }
-  
   out <- res
   out$df_raw <- df_good
   out$cp_est_df <- cp_good
+  
   out
 }
-
-

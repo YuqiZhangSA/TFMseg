@@ -57,17 +57,20 @@ compare_reest <- function(
     Time,
     dep = TRUE,
     theta_coef = 0.5,
+    data_setting = c("s3_A2","s3_3I", "s0", "s3_A1"),
     r_hat_pre = NULL,
     r_hat_post = NULL,
     r_hat = NULL,
     detect_thd = NULL,
     V.diag = TRUE,
     lrv = TRUE,
-    id_thd_coef = 3,
-    seed = 901
+    id_thd_coef = 3.5,
+    seed = 901,
+    use_true_cp = FALSE
 ) {
   stopifnot(length(dim_obs) == 3L, length(dim_latent) == 3L)
   stopifnot(all(dim_latent >= 3))
+  data_setting <- match.arg(data_setting)
   
   theta_true <- floor(Time * theta_coef)
   if (theta_true <= 0 || theta_true >= Time) {
@@ -76,11 +79,28 @@ compare_reest <- function(
   
   set.seed(seed)
   
-  A2 <- matrix(c(
-    1, 0, 0,
-    0, 1, 0,
-    0, 0, 0
-  ), nrow = 3, byrow = TRUE)
+  if (data_setting == "s3_A2") {
+    A <- matrix(c(
+      1, 0, 0,
+      0, 1, 0,
+      0, 0, 0
+    ), nrow = 3, byrow = TRUE)
+    true_changed <- c(TRUE, FALSE, FALSE)
+  } else if (data_setting == "s3_3I") {
+    A <- 3 * diag(3)
+    true_changed <- c(TRUE, FALSE, FALSE)
+  } else if (data_setting == "s0") {
+    A <- diag(3)
+    true_changed <- c(FALSE, FALSE, FALSE)
+  } else if (data_setting == "s3_A1") {
+    A <- matrix(0, 3, 3)
+    A[1, 1] <- 0.5
+    A[2, 1] <- rnorm(1, 0, 1); A[2, 2] <- 1
+    A[3, 1] <- rnorm(1, 0, 1); A[3, 2] <- rnorm(1, 0, 1); A[3, 3] <- 1.5
+    true_changed <- c(TRUE, FALSE, FALSE)
+  }
+  
+  
   
   data_sim <- dgp_general(
     model = "tensor",
@@ -96,7 +116,7 @@ compare_reest <- function(
     shift_mean = NULL,
     shift_var = NULL,
     transform_list = list(
-      list(A2, diag(dim_latent[2]), diag(dim_latent[3]))
+      list(A, diag(dim_latent[2]), diag(dim_latent[3]))
     ),
     add_factors = NULL,
     add_factors_coeff = NULL,
@@ -105,6 +125,8 @@ compare_reest <- function(
   
   X <- data_sim$X
   dim_X <- dim(X)[1:3]
+  
+  #X <- X[, , , Time:1, drop = FALSE]
   
   fit_full0 <- global_pca(
     X = X,
@@ -140,38 +162,50 @@ compare_reest <- function(
   cp_hat_all <- sort(unique(as.integer(cp_hat_all)))
   
   acc_win <- max(1L, as.integer(round(2 * log(Time))))
-  valid <- (length(cp_hat_all) == 1L) && (abs(cp_hat_all[1] - theta_true) <= acc_win)
   
-  if (!valid) {
-    return(list(
-      valid = FALSE,
-      theta_true = theta_true,
-      cp_hat = NA_integer_,
-      cp_hat_all = cp_hat_all,
-      cp_err = NA_integer_,
-      changed_hat = c(NA, NA, NA),
-      mode_id_correct = c(NA, NA, NA),
-      r_hat_full = as.integer(fit_full0$r_hat),
-      r_hat_pre = rep(NA_integer_, 3L),
-      r_hat_post = rep(NA_integer_, 3L),
-      loss_mode = NULL
-    ))
+  if (isTRUE(use_true_cp)) {
+    valid <- TRUE
+    cp_used <- theta_true
+    cp_hat_all <- if (data_setting == "s0") integer(0) else cp_hat_all
+    
+    cp_hat_store <- if (length(cp_hat_all) >= 1L) cp_hat_all[1] else NA_integer_
+    cp_err_store <- if (!is.na(cp_hat_store)) cp_hat_store - theta_true else NA_integer_
+  } else {
+    valid <- (length(cp_hat_all) == 1L) && (abs(cp_hat_all[1] - theta_true) <= acc_win)
+    
+    if (!valid) {
+      return(list(
+        valid = FALSE,
+        theta_true = theta_true,
+        cp_hat = NA_integer_,
+        cp_used = NA_integer_,
+        cp_hat_all = cp_hat_all,
+        cp_err = NA_integer_,
+        changed_hat = c(NA, NA, NA),
+        mode_id_correct = c(NA, NA, NA),
+        r_hat_full = as.integer(fit_full0$r_hat),
+        r_hat_pre = rep(NA_integer_, 3L),
+        r_hat_post = rep(NA_integer_, 3L),
+        loss_mode = NULL
+      ))
+    }
+    
+    cp_used <- cp_hat_all[1]
+    cp_hat_store <- cp_used
+    cp_err_store <- cp_used - theta_true
   }
-  
-  cp_hat <- cp_hat_all[1]
   
   id_out <- id_modes(
     G = G,
     G_dim = G_dim,
     dim_obs = dim_obs,
-    cp_vec = cp_hat,
+    cp_vec = cp_used,
     st = 1L,
     ed = Time,
     id_thd_coef = id_thd_coef
   )
   
   changed_hat <- as.logical(id_out$changed[, 1])
-  true_changed <- c(TRUE, FALSE, FALSE)
   mode_id_correct <- (changed_hat == true_changed)
   
   true_pre <- data_sim$loadings_hist[[1]]
@@ -179,13 +213,13 @@ compare_reest <- function(
   
   fit_pre <- global_pca(
     X = X, dim_X = dim_X, r_hat = r_hat_pre,
-    st = 1L, ed = cp_hat,
+    st = 1L, ed = cp_used,
     centre = TRUE, proj = TRUE
   )
   
   fit_post <- global_pca(
     X = X, dim_X = dim_X, r_hat = r_hat_post,
-    st = cp_hat + 1L, ed = Time,
+    st = cp_used + 1L, ed = Time,
     centre = TRUE, proj = TRUE
   )
   
@@ -201,25 +235,26 @@ compare_reest <- function(
   Lambda_M2_post <- vector("list", 3L)
   Lambda_M2_pool <- vector("list", 3L)
   
-  Lambda_M2_pre[[1]]  <- fit_pre$Lambda_proj[[1]]
-  Lambda_M2_post[[1]] <- fit_post$Lambda_proj[[1]]
+  Lambda_M2_pre[[1]]  <- fit_pre$Lambda_proj[[1]] #fit_pre$Lambda_proj[[1]]
+  Lambda_M2_post[[1]] <- fit_post$Lambda_proj[[1]] 
   Lambda_M2_pool[[1]] <- NULL
   
   ## unchanged mode 2: one pooled estimator over the whole sample
   Lambda_M2_pool[[2]] <- mode_informed_proj(
-    X = X, dim_X = dim_X, cp = cp_hat, k = 2L,
+    X = X, dim_X = dim_X, cp = cp_used, k = 2L,
     Lambda1_pre = fit_pre$Lambda_proj[[1]],
     Lambda1_post = fit_post$Lambda_proj[[1]],
     Lambda_comp_pool = Lambda_init_pool[[3]],
     r_k = r_full_used[2],
     centre = TRUE
   )
+  
   Lambda_M2_pre[[2]]  <- NULL
   Lambda_M2_post[[2]] <- NULL
   
   ## unchanged mode 3: one pooled estimator over the whole sample
   Lambda_M2_pool[[3]] <- mode_informed_proj(
-    X = X, dim_X = dim_X, cp = cp_hat, k = 3L,
+    X = X, dim_X = dim_X, cp = cp_used, k = 3L,
     Lambda1_pre = fit_pre$Lambda_proj[[1]],
     Lambda1_post = fit_post$Lambda_proj[[1]],
     Lambda_comp_pool = Lambda_init_pool[[2]],
@@ -300,9 +335,10 @@ compare_reest <- function(
   list(
     valid = TRUE,
     theta_true = theta_true,
-    cp_hat = cp_hat,
+    cp_hat = cp_hat_store,
+    cp_used = cp_used,
     cp_hat_all = cp_hat_all,
-    cp_err = cp_hat - theta_true,
+    cp_err = cp_err_store,
     changed_hat = changed_hat,
     mode_id_correct = mode_id_correct,
     ratio_Tp = id_out$ratio_Tp[, 1],
@@ -329,11 +365,13 @@ simu_reest <- function(
     detect_thd = NULL,
     V.diag = TRUE,
     lrv = TRUE,
-    id_thd_coef = 3,
-    data_setting = "s3_A2"
+    id_thd_coef = 3.5,
+    data_setting = c("s3_A2","s3_3I", "s0", "s3_A1"),
+    use_true_cp = FALSE
 ) {
   if (is.null(Time_list)) stop("Please provide Time_list.")
   if (is.null(dim_obs_list)) stop("Please provide dim_obs_list.")
+  data_setting <- match.arg(data_setting)
   
   settings <- expand.grid(
     Time = Time_list,
@@ -350,7 +388,7 @@ simu_reest <- function(
     dim_chr <- paste(dim_obs_i, collapse = "x")
     
     message(sprintf(
-      "[reest_s3A2] %d/%d: Time=%d, dim_obs=%s, setting=%s",
+      "[reest] %d/%d: Time=%d, dim_obs=%s, setting=%s",
       i, nrow(settings), Time_i, dim_chr, data_setting
     ))
     
@@ -362,6 +400,7 @@ simu_reest <- function(
         Time = Time_i,
         dep = dep,
         theta_coef = theta_coef,
+        data_setting = data_setting,
         r_hat_pre = r_hat_pre,
         r_hat_post = r_hat_post,
         r_hat = r_hat,
@@ -369,18 +408,31 @@ simu_reest <- function(
         V.diag = V.diag,
         lrv = lrv,
         id_thd_coef = id_thd_coef,
-        seed = 900 + sim
+        seed = 900 + sim,
+        use_true_cp = use_true_cp
       )
     }
     
     meta_df <- do.call(rbind, lapply(seq_len(nrep), function(sim) {
       x <- out_list[[sim]]
       
-      valid_detect <- isTRUE(x$valid)
-      valid_idt <- valid_detect &&
-        isTRUE(x$changed_hat[1]) &&
-        !isTRUE(x$changed_hat[2]) &&
-        !isTRUE(x$changed_hat[3])
+      valid_detect <- if (isTRUE(use_true_cp)) {
+        !is.null(x$loss_mode)
+      } else {
+        isTRUE(x$valid)
+      }
+      
+      valid_idt <- if (data_setting == "s0") {
+        valid_detect &&
+          !isTRUE(x$changed_hat[1]) &&
+          !isTRUE(x$changed_hat[2]) &&
+          !isTRUE(x$changed_hat[3])
+      } else {
+        valid_detect &&
+          isTRUE(x$changed_hat[1]) &&
+          !isTRUE(x$changed_hat[2]) &&
+          !isTRUE(x$changed_hat[3])
+      }
       
       data.frame(
         sim = sim,
@@ -390,6 +442,7 @@ simu_reest <- function(
         valid_idt = valid_idt,
         theta_true = x$theta_true,
         cp_hat = x$cp_hat,
+        cp_used = x$cp_used,
         cp_err = x$cp_err,
         mode1_changed = x$changed_hat[1],
         mode2_changed = x$changed_hat[2],
@@ -530,19 +583,20 @@ simu_reest <- function(
   )
 }
 
-
 plot_reest_box <- function(reest_obj,
                            Time_select,
                            dim_obs_list,
-                           mode = c(2, 3),
+                           mode = c(1, 2, 3),
                            show_M3 = FALSE,
                            y_lim = NULL,
                            outlier_size = 1.2,
                            box_width = 0.65,
-                           title_suffix = NULL) {
+                           title_suffix = NULL,
+                           legend_title = NULL,
+                           legend_labels = NULL) {
   mode <- as.integer(mode)
-  if (!all(mode %in% c(2L, 3L))) {
-    stop("`mode` must be chosen from 2 and 3 only.")
+  if (!all(mode %in% c(1L, 2L, 3L))) {
+    stop("`mode` must be chosen from 1, 2 and 3.")
   }
   
   loss_df <- reest_obj$loss_mode_all_idt
@@ -568,49 +622,139 @@ plot_reest_box <- function(reest_obj,
     stop("No matching rows found for the given `Time_select`, `dim_obs_list`, and `mode`.")
   }
   
-  df_list <- list(
-    df_sub %>%
-      dplyr::transmute(
-        sim, Time, dim_obs, mode,
-        box_type = "M1 pre",
-        error = M1_pre
-      ),
-    df_sub %>%
-      dplyr::transmute(
-        sim, Time, dim_obs, mode,
-        box_type = "M1 post",
-        error = M1_post
-      ),
-    df_sub %>%
-      dplyr::transmute(
-        sim, Time, dim_obs, mode,
-        box_type = "M2",
-        error = M2_pool
-      )
-  )
+  df_list <- list()
   
-  if (isTRUE(show_M3)) {
-    df_list[[length(df_list) + 1L]] <- df_sub %>%
-      dplyr::transmute(
-        sim, Time, dim_obs, mode,
-        box_type = "M3",
-        error = 0.5 * (M3_pre + M3_post)
-      )
+  for (m in mode) {
+    df_m <- df_sub %>% dplyr::filter(mode == m)
+    
+    if (m == 1L) {
+      df_list[[length(df_list) + 1L]] <- df_m %>%
+        dplyr::transmute(
+          sim, Time, dim_obs, mode,
+          box_type = "Pre",
+          error = M1_pre,
+          x_pos = 1
+        )
+      df_list[[length(df_list) + 1L]] <- df_m %>%
+        dplyr::transmute(
+          sim, Time, dim_obs, mode,
+          box_type = "Post",
+          error = M1_post,
+          x_pos = 2
+        )
+    }
+    
+    if (m == 2L) {
+      df_list[[length(df_list) + 1L]] <- df_m %>%
+        dplyr::transmute(
+          sim, Time, dim_obs, mode,
+          box_type = "M1 pre",
+          error = M1_pre,
+          x_pos = 4
+        )
+      df_list[[length(df_list) + 1L]] <- df_m %>%
+        dplyr::transmute(
+          sim, Time, dim_obs, mode,
+          box_type = "M1 post",
+          error = M1_post,
+          x_pos = 5
+        )
+      df_list[[length(df_list) + 1L]] <- df_m %>%
+        dplyr::transmute(
+          sim, Time, dim_obs, mode,
+          box_type = "M2",
+          error = M2_pool,
+          x_pos = 6
+        )
+      
+      if (isTRUE(show_M3)) {
+        df_list[[length(df_list) + 1L]] <- df_m %>%
+          dplyr::transmute(
+            sim, Time, dim_obs, mode,
+            box_type = "M3",
+            error = 0.5 * (M3_pre + M3_post),
+            x_pos = 7
+          )
+      }
+    }
+    
+    if (m == 3L) {
+      base_pos <- if (isTRUE(show_M3)) 9 else 8
+      
+      df_list[[length(df_list) + 1L]] <- df_m %>%
+        dplyr::transmute(
+          sim, Time, dim_obs, mode,
+          box_type = "M1 pre",
+          error = M1_pre,
+          x_pos = base_pos
+        )
+      df_list[[length(df_list) + 1L]] <- df_m %>%
+        dplyr::transmute(
+          sim, Time, dim_obs, mode,
+          box_type = "M1 post",
+          error = M1_post,
+          x_pos = base_pos + 1
+        )
+      df_list[[length(df_list) + 1L]] <- df_m %>%
+        dplyr::transmute(
+          sim, Time, dim_obs, mode,
+          box_type = "M2",
+          error = M2_pool,
+          x_pos = base_pos + 2
+        )
+      
+      if (isTRUE(show_M3)) {
+        df_list[[length(df_list) + 1L]] <- df_m %>%
+          dplyr::transmute(
+            sim, Time, dim_obs, mode,
+            box_type = "M3",
+            error = 0.5 * (M3_pre + M3_post),
+            x_pos = base_pos + 3
+          )
+      }
+    }
   }
   
-  box_levels <- c("M1 pre", "M1 post", "M2")
-  if (isTRUE(show_M3)) box_levels <- c(box_levels, "M3")
+  df_plot <- dplyr::bind_rows(df_list) %>%
+    dplyr::filter(!is.na(error))
+  
+  if (nrow(df_plot) == 0L) {
+    stop("No non-missing errors available for plotting.")
+  }
+  
+  df_plot <- df_plot %>%
+    dplyr::mutate(
+      fill_key = dplyr::case_when(
+        box_type %in% c("Pre", "M1 pre") ~ "M1 pre",
+        box_type %in% c("Post", "M1 post") ~ "M1 post",
+        box_type == "M2" ~ "M2",
+        box_type == "M3" ~ "M3"
+      )
+    )
+  
+  used_fill_levels <- c("M1 pre", "M1 post", "M2")
+  if (isTRUE(show_M3)) {
+    used_fill_levels <- c(used_fill_levels, "M3")
+  }
+  
+  if (is.null(legend_labels)) {
+    legend_labels <- used_fill_levels
+  }
+  
+  if (!is.character(legend_labels) || length(legend_labels) != length(used_fill_levels)) {
+    stop("`legend_labels` must be NULL or a character vector with length equal to the number of legend entries.")
+  }
+  
+  names(legend_labels) <- used_fill_levels
   
   dim_obs_labels <- paste0("(", gsub("x", ",", dim_obs_chr_list), ")")
   
-  df_plot <- dplyr::bind_rows(df_list) %>%
-    dplyr::filter(!is.na(error)) %>%
+  df_plot <- df_plot %>%
     dplyr::mutate(
-      box_type = factor(box_type, levels = box_levels),
-      mode = factor(
-        mode,
-        levels = c(2, 3),
-        labels = c("Mode 2", "Mode 3")
+      fill_key = factor(
+        fill_key,
+        levels = used_fill_levels,
+        labels = unname(legend_labels)
       ),
       Time = factor(
         Time,
@@ -621,8 +765,7 @@ plot_reest_box <- function(reest_obj,
         dim_obs,
         levels = dim_obs_chr_list,
         labels = dim_obs_labels
-      ),
-      x_dummy = ""
+      )
     )
   
   box_colours <- c(
@@ -632,30 +775,56 @@ plot_reest_box <- function(reest_obj,
     "M3"      = "#9ECAE1"
   )
   
-  title_main <- paste0(
-    paste(levels(droplevels(df_plot$mode)), collapse = ", "),
-    ": Estimated factor numbers, T = ", Time_select
-  )
   if (!is.null(title_suffix) && nzchar(title_suffix)) {
-    title_main <- paste0(title_main, ": ", title_suffix)
+    title_main <- title_suffix
+  } else {
+    title_main <- paste0("T = ", Time_select)
   }
   
-  p <- ggplot(df_plot, aes(x = x_dummy, y = error, fill = box_type)) +
+  vline_pos <- c()
+  if (all(c(1L, 2L) %in% mode)) {
+    vline_pos <- c(vline_pos, 3)
+  }
+  if (all(c(2L, 3L) %in% mode)) {
+    vline_pos <- c(vline_pos, if (isTRUE(show_M3)) 8 else 7)
+  }
+  
+  x_breaks <- c()
+  x_labels <- c()
+  if (1L %in% mode) {
+    x_breaks <- c(x_breaks, 1.5)
+    x_labels <- c(x_labels, "Mode 1")
+  }
+  if (2L %in% mode) {
+    x_breaks <- c(x_breaks, if (isTRUE(show_M3)) 5.5 else 5)
+    x_labels <- c(x_labels, "Mode 2")
+  }
+  if (3L %in% mode) {
+    x_breaks <- c(x_breaks, if (isTRUE(show_M3)) 10.5 else 9)
+    x_labels <- c(x_labels, "Mode 3")
+  }
+  
+  p <- ggplot(df_plot, aes(x = x_pos, y = error, fill = fill_key, group = x_pos)) +
+    {if (length(vline_pos) > 0) geom_vline(xintercept = vline_pos, linetype = "dashed",
+                                           colour = "grey50", linewidth = 0.4)} +
     geom_boxplot(
-      position = position_dodge(width = 0.8),
       width = box_width,
       outlier.size = outlier_size,
       outlier.alpha = 0.75
     ) +
+    scale_x_continuous(
+      breaks = x_breaks,
+      labels = x_labels
+    ) +
     scale_fill_manual(
-      values = box_colours[box_levels],
-      breaks = box_levels,
-      drop = TRUE
+      values = unname(box_colours[used_fill_levels]),
+      breaks = unname(legend_labels),
+      drop = FALSE
     ) +
     labs(
       x = NULL,
       y = "Loading estimation error",
-      fill = NULL,
+      fill = legend_title,
       title = title_main
     ) +
     facet_grid(. ~ dim_obs, scales = "fixed") +
@@ -663,7 +832,7 @@ plot_reest_box <- function(reest_obj,
     theme(
       plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
       axis.title.y = element_text(size = 12),
-      axis.text.x = element_blank(),
+      axis.text.x = element_text(size = 10),
       axis.ticks.x = element_blank(),
       axis.text.y = element_text(size = 10),
       legend.text = element_text(size = 12),
@@ -683,6 +852,7 @@ plot_reest_box <- function(reest_obj,
   p
 }
 
+
 library(dplyr)
 library(tidyr)
 library(ggplot2)
@@ -690,15 +860,17 @@ library(ggplot2)
 plot_reest_box_all <- function(reest_obj,
                                Time_list,
                                dim_obs_list,
-                               mode = c(2, 3),
+                               mode = c(1, 2, 3),
                                show_M3 = FALSE,
                                y_lim = c(0, 0.1),
                                outlier_size = 1.2,
                                box_width = 0.65,
-                               title_suffix = NULL) {
+                               title_suffix = NULL,
+                               legend_title = NULL,
+                               legend_labels = NULL) {
   mode <- as.integer(mode)
-  if (!all(mode %in% c(2L, 3L))) {
-    stop("`mode` must be chosen from 2 and 3 only.")
+  if (!all(mode %in% c(1L, 2L, 3L))) {
+    stop("`mode` must be chosen from 1, 2 and 3.")
   }
   
   loss_df <- reest_obj$loss_mode_all_idt
@@ -707,62 +879,106 @@ plot_reest_box_all <- function(reest_obj,
     stop("No loss data available in `reest_obj$loss_mode_all_idt`.")
   }
   
+  if (length(Time_list) == 0L) {
+    stop("`Time_list` must contain at least one value.")
+  }
+  
   dim_obs_chr_list <- vapply(dim_obs_list, paste, collapse = "x", FUN.VALUE = character(1))
   
   df_sub <- loss_df %>%
     dplyr::filter(
-      Time %in% !!Time_list,
-      dim_obs %in% !!dim_obs_chr_list,
-      mode %in% !!mode
+      Time %in% Time_list,
+      dim_obs %in% dim_obs_chr_list,
+      mode %in% mode
     )
   
   if (nrow(df_sub) == 0L) {
     stop("No matching rows found for the given `Time_list`, `dim_obs_list`, and `mode`.")
   }
   
-  df_list <- list(
-    df_sub %>%
-      dplyr::transmute(
-        sim, Time, dim_obs, mode,
-        box_type = "M1 pre",
-        error = M1_pre
-      ),
-    df_sub %>%
-      dplyr::transmute(
-        sim, Time, dim_obs, mode,
-        box_type = "M1 post",
-        error = M1_post
-      ),
-    df_sub %>%
-      dplyr::transmute(
-        sim, Time, dim_obs, mode,
-        box_type = "M2",
-        error = M2_pool
-      )
-  )
+  df_list <- list()
   
-  if (isTRUE(show_M3)) {
-    df_list[[length(df_list) + 1L]] <- df_sub %>%
-      dplyr::transmute(
-        sim, Time, dim_obs, mode,
-        box_type = "M3",
-        error = 0.5 * (M3_pre + M3_post)
-      )
+  for (m in mode) {
+    df_m <- df_sub %>% dplyr::filter(mode == m)
+    
+    if (m == 1L) {
+      df_list[[length(df_list) + 1L]] <- df_m %>%
+        dplyr::transmute(
+          sim, Time, dim_obs, mode,
+          box_type = "Pre",
+          error = M1_pre
+        )
+      df_list[[length(df_list) + 1L]] <- df_m %>%
+        dplyr::transmute(
+          sim, Time, dim_obs, mode,
+          box_type = "Post",
+          error = M1_post
+        )
+    } else {
+      df_list[[length(df_list) + 1L]] <- df_m %>%
+        dplyr::transmute(
+          sim, Time, dim_obs, mode,
+          box_type = "M1 pre",
+          error = M1_pre
+        )
+      df_list[[length(df_list) + 1L]] <- df_m %>%
+        dplyr::transmute(
+          sim, Time, dim_obs, mode,
+          box_type = "M1 post",
+          error = M1_post
+        )
+      df_list[[length(df_list) + 1L]] <- df_m %>%
+        dplyr::transmute(
+          sim, Time, dim_obs, mode,
+          box_type = "M2",
+          error = M2_pool
+        )
+      
+      if (isTRUE(show_M3)) {
+        df_list[[length(df_list) + 1L]] <- df_m %>%
+          dplyr::transmute(
+            sim, Time, dim_obs, mode,
+            box_type = "M3",
+            error = 0.5 * (M3_pre + M3_post)
+          )
+      }
+    }
   }
   
-  box_levels <- c("M1 pre", "M1 post", "M2")
-  if (isTRUE(show_M3)) box_levels <- c(box_levels, "M3")
+  df_plot <- dplyr::bind_rows(df_list) %>%
+    dplyr::filter(!is.na(error))
+  
+  if (nrow(df_plot) == 0L) {
+    stop("No non-missing errors available for plotting.")
+  }
+  
+  all_box_levels <- c("Pre", "Post", "M1 pre", "M1 post", "M2", "M3")
+  used_box_levels <- all_box_levels[all_box_levels %in% unique(df_plot$box_type)]
+  
+  if (is.null(legend_labels)) {
+    legend_labels <- used_box_levels
+  }
+  
+  if (!is.character(legend_labels) || length(legend_labels) != length(used_box_levels)) {
+    stop("`legend_labels` must be NULL or a character vector with length equal to the number of displayed box types.")
+  }
+  
+  names(legend_labels) <- used_box_levels
   
   dim_obs_labels <- paste0("(", gsub("x", ",", dim_obs_chr_list), ")")
+  mode_labels <- c("Mode 1", "Mode 2", "Mode 3")
   
-  df_plot <- dplyr::bind_rows(df_list) %>%
-    dplyr::filter(!is.na(error)) %>%
+  df_plot <- df_plot %>%
     dplyr::mutate(
-      box_type = factor(box_type, levels = box_levels),
+      box_type = factor(
+        box_type,
+        levels = used_box_levels,
+        labels = unname(legend_labels)
+      ),
       mode = factor(
         mode,
-        levels = c(2, 3),
-        labels = c("Mode 2", "Mode 3")
+        levels = c(1, 2, 3),
+        labels = mode_labels
       ),
       Time = factor(
         Time,
@@ -778,16 +994,20 @@ plot_reest_box_all <- function(reest_obj,
     )
   
   box_colours <- c(
-    "M1 pre"  = "#F4B6C2",
+    "Pre" = "#F4B6C2",
+    "Post" = "#D97A9A",
+    "M1 pre" = "#F4B6C2",
     "M1 post" = "#D97A9A",
-    "M2"      = "#A1D99B",
-    "M3"      = "#9ECAE1"
+    "M2" = "#A1D99B",
+    "M3" = "#9ECAE1"
   )
   
   title_main <- paste(levels(droplevels(df_plot$mode)), collapse = ", ")
   if (!is.null(title_suffix) && nzchar(title_suffix)) {
     title_main <- paste0(title_main, ": ", title_suffix)
   }
+  
+  facet_scales <- if (is.list(y_lim)) "free_y" else "fixed"
   
   p <- ggplot(df_plot, aes(x = x_dummy, y = error, fill = box_type)) +
     geom_boxplot(
@@ -797,17 +1017,17 @@ plot_reest_box_all <- function(reest_obj,
       outlier.alpha = 0.75
     ) +
     scale_fill_manual(
-      values = box_colours[box_levels],
-      breaks = box_levels,
+      values = unname(box_colours[used_box_levels]),
+      breaks = unname(legend_labels),
       drop = TRUE
     ) +
     labs(
       x = NULL,
       y = "Loading estimation error",
-      fill = NULL,
+      fill = legend_title,
       title = title_main
     ) +
-    facet_grid(dim_obs ~ Time, scales = "free_y") +
+    facet_grid(dim_obs ~ Time, scales = facet_scales) +
     theme_bw(base_size = 11) +
     theme(
       plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
@@ -826,10 +1046,10 @@ plot_reest_box_all <- function(reest_obj,
   
   ## y_lim can be:
   ## 1. NULL -> do nothing
-  ## 2. numeric vector length 2 -> same limit for all rows
-  ## 3. list of length = number of rows -> row-specific limits
+  ## 2. numeric vector length 2 -> same limit for all panels
+  ## 3. list of length = number of row panels -> row-specific limits
   if (!is.null(y_lim)) {
-    n_row <- length(dim_obs_labels)
+    n_row <- length(levels(droplevels(df_plot$mode))) * length(dim_obs_labels)
     
     if (is.numeric(y_lim) && length(y_lim) == 2L) {
       p <- p + coord_cartesian(ylim = y_lim)
@@ -837,6 +1057,248 @@ plot_reest_box_all <- function(reest_obj,
       if (!requireNamespace("ggh4x", quietly = TRUE)) {
         stop("Package `ggh4x` is required for row-specific y limits.")
       }
+      if (length(y_lim) != n_row) {
+        stop("When `y_lim` is a list, its length must equal the number of facet rows, i.e. length(selected modes) × length(dim_obs_list).")
+      }
+      
+      y_scales <- lapply(seq_len(n_row), function(i) {
+        lim_i <- y_lim[[i]]
+        if (is.null(lim_i)) {
+          ggplot2::scale_y_continuous()
+        } else {
+          if (!is.numeric(lim_i) || length(lim_i) != 2L) {
+            stop("Each element of `y_lim` must be NULL or a numeric vector of length 2.")
+          }
+          ggplot2::scale_y_continuous(limits = lim_i)
+        }
+      })
+      
+      p <- p + ggh4x::facetted_pos_scales(y = y_scales)
+    } else {
+      stop("`y_lim` must be NULL, a numeric vector of length 2, or a list.")
+    }
+  }
+  
+  p
+}
+
+
+plot_reest_box_all_mode <- function(reest_obj,
+                                    Time_list,
+                                    dim_obs_list,
+                                    y_lim = NULL,
+                                    outlier_size = 1.2,
+                                    box_width = 0.65,
+                                    title_suffix = NULL,
+                                    legend_title = NULL,
+                                    legend_labels = NULL) {
+  loss_df <- reest_obj$loss_mode_all_idt
+  
+  if (is.null(loss_df) || nrow(loss_df) == 0L) {
+    stop("No loss data available in `reest_obj$loss_mode_all_idt`.")
+  }
+  
+  if (length(Time_list) == 0L) {
+    stop("`Time_list` must contain at least one value.")
+  }
+  
+  dim_obs_chr_list <- vapply(dim_obs_list, paste, collapse = "x", FUN.VALUE = character(1))
+  
+  df_sub <- loss_df %>%
+    dplyr::filter(
+      Time %in% Time_list,
+      dim_obs %in% dim_obs_chr_list,
+      mode %in% c(1L, 2L, 3L)
+    )
+  
+  if (nrow(df_sub) == 0L) {
+    stop("No matching rows found for the given `Time_list` and `dim_obs_list`.")
+  }
+  
+  df_list <- list()
+  
+  ## Mode 1: Pre / Post
+  df_m1 <- df_sub %>% dplyr::filter(mode == 1L)
+  if (nrow(df_m1) > 0L) {
+    df_list[[length(df_list) + 1L]] <- df_m1 %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        method = "Pre",
+        error = M1_pre,
+        x_pos = 1
+      )
+    df_list[[length(df_list) + 1L]] <- df_m1 %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        method = "Post",
+        error = M1_post,
+        x_pos = 2
+      )
+  }
+  
+  ## Mode 2: M1 pre / M1 post / M2
+  df_m2 <- df_sub %>% dplyr::filter(mode == 2L)
+  if (nrow(df_m2) > 0L) {
+    df_list[[length(df_list) + 1L]] <- df_m2 %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        method = "M1 pre",
+        error = M1_pre,
+        x_pos = 4
+      )
+    df_list[[length(df_list) + 1L]] <- df_m2 %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        method = "M1 post",
+        error = M1_post,
+        x_pos = 5
+      )
+    df_list[[length(df_list) + 1L]] <- df_m2 %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        method = "M2",
+        error = M2_pool,
+        x_pos = 6
+      )
+  }
+  
+  ## Mode 3: M1 pre / M1 post / M2
+  df_m3 <- df_sub %>% dplyr::filter(mode == 3L)
+  if (nrow(df_m3) > 0L) {
+    df_list[[length(df_list) + 1L]] <- df_m3 %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        method = "M1 pre",
+        error = M1_pre,
+        x_pos = 8
+      )
+    df_list[[length(df_list) + 1L]] <- df_m3 %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        method = "M1 post",
+        error = M1_post,
+        x_pos = 9
+      )
+    df_list[[length(df_list) + 1L]] <- df_m3 %>%
+      dplyr::transmute(
+        sim, Time, dim_obs, mode,
+        method = "M2",
+        error = M2_pool,
+        x_pos = 10
+      )
+  }
+  
+  df_plot <- dplyr::bind_rows(df_list) %>%
+    dplyr::filter(!is.na(error))
+  
+  if (nrow(df_plot) == 0L) {
+    stop("No non-missing errors available for plotting.")
+  }
+  
+  ## Map plotting categories to a smaller legend
+  df_plot <- df_plot %>%
+    dplyr::mutate(
+      fill_key = dplyr::case_when(
+        method %in% c("Pre", "M1 pre") ~ "M1 pre",
+        method %in% c("Post", "M1 post") ~ "M1 post",
+        method == "M2" ~ "M2"
+      )
+    )
+  
+  used_fill_levels <- c("M1 pre", "M1 post", "M2")
+  
+  if (is.null(legend_labels)) {
+    legend_labels <- used_fill_levels
+  }
+  
+  if (!is.character(legend_labels) || length(legend_labels) != length(used_fill_levels)) {
+    stop("`legend_labels` must be NULL or a character vector of length 3.")
+  }
+  
+  names(legend_labels) <- used_fill_levels
+  
+  dim_obs_labels <- paste0("(", gsub("x", ",", dim_obs_chr_list), ")")
+  
+  df_plot <- df_plot %>%
+    dplyr::mutate(
+      fill_key = factor(
+        fill_key,
+        levels = used_fill_levels,
+        labels = unname(legend_labels)
+      ),
+      Time = factor(
+        Time,
+        levels = Time_list,
+        labels = paste0("T = ", Time_list)
+      ),
+      dim_obs = factor(
+        dim_obs,
+        levels = dim_obs_chr_list,
+        labels = dim_obs_labels
+      )
+    )
+  
+  box_colours <- c(
+    "M1 pre"  = "#F4B6C2",
+    "M1 post" = "#D97A9A",
+    "M2"      = "#A1D99B"
+  )
+  
+  #title_main <- "Modes 1, 2 and 3"
+  if (!is.null(title_suffix) && nzchar(title_suffix)) {
+    title_main <- paste0(title_suffix)
+  }
+  
+  facet_scales <- if (is.list(y_lim)) "free_y" else "fixed"
+  
+  p <- ggplot(df_plot, aes(x = x_pos, y = error, fill = fill_key, group = x_pos)) +
+    geom_vline(xintercept = c(3, 7), linetype = "dashed", colour = "grey50", linewidth = 0.4) +
+    geom_boxplot(
+      width = box_width,
+      outlier.size = outlier_size,
+      outlier.alpha = 0.75
+    ) +
+    scale_x_continuous(
+      breaks = c(1.5, 5, 9),
+      labels = c("Mode 1", "Mode 2", "Mode 3")
+    ) +
+    scale_fill_manual(
+      values = unname(box_colours[used_fill_levels]),
+      breaks = unname(legend_labels),
+      drop = FALSE
+    ) +
+    labs(
+      x = NULL,
+      y = "Loading estimation error",
+      fill = legend_title,
+      title = title_main
+    ) +
+    facet_grid(dim_obs ~ Time, scales = facet_scales) +
+    theme_bw(base_size = 11) +
+    theme(
+      plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+      axis.title.y = element_text(size = 12),
+      axis.text.x = element_text(size = 10),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_text(size = 10),
+      legend.text = element_text(size = 10),
+      strip.background = element_blank(),
+      strip.text.x = element_text(size = 10, face = "bold"),
+      strip.text.y = element_text(size = 10, face = "bold", angle = 270),
+      strip.text.y.right = element_text(size = 10, face = "bold", angle = 270),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    )
+  
+  if (!is.null(y_lim)) {
+    if (is.numeric(y_lim) && length(y_lim) == 2L) {
+      p <- p + coord_cartesian(ylim = y_lim)
+    } else if (is.list(y_lim)) {
+      if (!requireNamespace("ggh4x", quietly = TRUE)) {
+        stop("Package `ggh4x` is required for row-specific y limits.")
+      }
+      
+      n_row <- length(dim_obs_labels)
       if (length(y_lim) != n_row) {
         stop("When `y_lim` is a list, its length must equal length(dim_obs_list).")
       }
@@ -853,9 +1315,7 @@ plot_reest_box_all <- function(reest_obj,
         }
       })
       
-      p <- p + ggh4x::facetted_pos_scales(
-        y = y_scales
-      )
+      p <- p + ggh4x::facetted_pos_scales(y = y_scales)
     } else {
       stop("`y_lim` must be NULL, a numeric vector of length 2, or a list.")
     }
@@ -863,7 +1323,6 @@ plot_reest_box_all <- function(reest_obj,
   
   p
 }
-
 
 check_outliers <- function(reest_obj,
                            Time,
