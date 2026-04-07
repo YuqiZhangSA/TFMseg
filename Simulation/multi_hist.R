@@ -264,7 +264,7 @@ multi_hist_subplot <- function(..., Time_list, theta_coef,
                                dataset_names = c("Complete", "Extract"),
                                dataset_alpha = 0.5,
                                dataset_position = c("identity", "dodge"),
-                               setting = c("S1", "S2")) {
+                               setting = c("S1", "S2", "none")) {
   
   dataset_position <- match.arg(dataset_position)
   setting <- match.arg(setting)
@@ -365,7 +365,11 @@ multi_hist_subplot <- function(..., Time_list, theta_coef,
     dim_keep
   )
   
-  x_lab <- paste0("Estimated change points (", setting, ")")
+  if (setting == "none") {
+    x_lab <- paste0("Estimated change points")
+  } else {
+    x_lab <- paste0("Estimated change points (", setting, ")")
+  }
   
   p <- ggplot2::ggplot(cp_est_df_plot, ggplot2::aes(x = scaled_cp))
   

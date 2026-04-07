@@ -66,11 +66,13 @@ compare_reest <- function(
     lrv = TRUE,
     id_thd_coef = 3.5,
     seed = 901,
-    use_true_cp = FALSE
+    use_true_cp = FALSE,
+    N_exact = c("log", "mid")
 ) {
   stopifnot(length(dim_obs) == 3L, length(dim_latent) == 3L)
   stopifnot(all(dim_latent >= 3))
   data_setting <- match.arg(data_setting)
+  N_exact <- match.arg(N_exact)
   
   theta_true <- floor(Time * theta_coef)
   if (theta_true <= 0 || theta_true >= Time) {
@@ -171,7 +173,17 @@ compare_reest <- function(
     cp_hat_store <- if (length(cp_hat_all) >= 1L) cp_hat_all[1] else NA_integer_
     cp_err_store <- if (!is.na(cp_hat_store)) cp_hat_store - theta_true else NA_integer_
   } else {
-    valid <- (length(cp_hat_all) == 1L) && (abs(cp_hat_all[1] - theta_true) <= acc_win)
+    if (N_exact == "log") {
+      valid <- (length(cp_hat_all) == 1L) &&
+        (abs(cp_hat_all[1] - theta_true) <= acc_win)
+    } else if (N_exact == "mid") {
+      left_bd  <- floor((0 + theta_true) / 2)
+      right_bd <- floor((theta_true + Time) / 2)
+      
+      valid <- (length(cp_hat_all) == 1L) &&
+        (cp_hat_all[1] > left_bd) &&
+        (cp_hat_all[1] <= right_bd)
+    }
     
     if (!valid) {
       return(list(
@@ -367,11 +379,13 @@ simu_reest <- function(
     lrv = TRUE,
     id_thd_coef = 3.5,
     data_setting = c("s3_A2","s3_3I", "s0", "s3_A1"),
-    use_true_cp = FALSE
+    use_true_cp = FALSE,
+    N_exact = c("log", "mid")
 ) {
   if (is.null(Time_list)) stop("Please provide Time_list.")
   if (is.null(dim_obs_list)) stop("Please provide dim_obs_list.")
   data_setting <- match.arg(data_setting)
+  N_exact <- match.arg(N_exact)
   
   settings <- expand.grid(
     Time = Time_list,
@@ -409,7 +423,8 @@ simu_reest <- function(
         lrv = lrv,
         id_thd_coef = id_thd_coef,
         seed = 900 + sim,
-        use_true_cp = use_true_cp
+        use_true_cp = use_true_cp,
+        N_exact = N_exact
       )
     }
     
@@ -775,11 +790,11 @@ plot_reest_box <- function(reest_obj,
     "M3"      = "#9ECAE1"
   )
   
-  if (!is.null(title_suffix) && nzchar(title_suffix)) {
-    title_main <- title_suffix
-  } else {
-    title_main <- paste0("T = ", Time_select)
-  }
+  # if (!is.null(title_suffix) && nzchar(title_suffix)) {
+  #   title_main <- title_suffix
+  # } else {
+  #   title_main <- paste0("T = ", Time_select)
+  # }
   
   vline_pos <- c()
   if (all(c(1L, 2L) %in% mode)) {
@@ -824,10 +839,10 @@ plot_reest_box <- function(reest_obj,
     labs(
       x = NULL,
       y = "Loading estimation error",
-      fill = legend_title,
-      title = title_main
+      fill = legend_title
+      #title = title_main
     ) +
-    facet_grid(. ~ dim_obs, scales = "fixed") +
+    facet_grid(Time ~ dim_obs, scales = "fixed") +
     theme_bw(base_size = 11) +
     theme(
       plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
@@ -838,6 +853,7 @@ plot_reest_box <- function(reest_obj,
       legend.text = element_text(size = 12),
       strip.background = element_blank(),
       strip.text.x = element_text(size = 10, face = "bold"),
+      strip.text.y.right = element_text(size = 10, face = "bold"),
       legend.position = "bottom",
       panel.grid.minor = element_blank()
     )
@@ -1245,9 +1261,9 @@ plot_reest_box_all_mode <- function(reest_obj,
   )
   
   #title_main <- "Modes 1, 2 and 3"
-  if (!is.null(title_suffix) && nzchar(title_suffix)) {
-    title_main <- paste0(title_suffix)
-  }
+  # if (!is.null(title_suffix) && nzchar(title_suffix)) {
+  #   title_main <- paste0(title_suffix)
+  # }
   
   facet_scales <- if (is.list(y_lim)) "free_y" else "fixed"
   
@@ -1270,8 +1286,8 @@ plot_reest_box_all_mode <- function(reest_obj,
     labs(
       x = NULL,
       y = "Loading estimation error",
-      fill = legend_title,
-      title = title_main
+      fill = legend_title
+      #title = title_main
     ) +
     facet_grid(dim_obs ~ Time, scales = facet_scales) +
     theme_bw(base_size = 11) +
