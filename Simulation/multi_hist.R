@@ -611,3 +611,281 @@ multi_hist_subplot_method <- function(
   
   return(p)
 }
+
+
+
+plot_runtime <- function(res_obj_list,
+                              source_labels = NULL,
+                              Time_list = c(400, 800, 1600, 3200),
+                              dim_obs_list = list(c(10, 10, 10),
+                                                  c(10, 10, 100),
+                                                  c(10, 20, 40),
+                                                  c(20, 20, 20)),
+                              runtime_col = "Mean_time_s",
+                              error_col = "SD_time_s",
+                              raw_runtime_col = "time",
+                              method_order = c("TFMseg", "LR"),
+                              method_labels = c("TFMseg", "LR"),
+                              y_lab = "Runtime (s)",
+                              log_y = TRUE,
+                              error_style = c("errorbar", "dotted", "ribbon", "none"),
+                              point_size = 1.5,
+                              line_width = 0.5,
+                              errorbar_width = 0.10,
+                              dotted_line_width = 0.6,
+                              ribbon_alpha = 0.3,
+                              base_size = 11,
+                              legend_title = NULL,
+                              x_text_angle = 25,
+                              x_text_size = 11) {
+  
+  error_style <- match.arg(error_style)
+  
+  library(ggplot2)
+  library(dplyr)
+  
+  if (!is.list(res_obj_list) || length(res_obj_list) == 0L) {
+    stop("`res_obj_list` must be a non-empty list.")
+  }
+  
+  if (is.null(source_labels)) {
+    source_labels <- paste0("Setting ", seq_along(res_obj_list))
+  }
+  
+  if (length(source_labels) != length(res_obj_list)) {
+    stop("`source_labels` must have the same length as `res_obj_list`.")
+  }
+  
+  make_dim_chr <- function(dim_obs_list) {
+    vapply(dim_obs_list, function(x) paste(x, collapse = "x"), character(1))
+  }
+  
+  make_dim_lab <- function(dim_obs_list) {
+    vapply(dim_obs_list, function(x) paste0("(", paste(x, collapse = ","), ")"), character(1))
+  }
+  
+  build_runtime_summary <- function(res_obj,
+                                    source_label,
+                                    runtime_col,
+                                    error_col,
+                                    raw_runtime_col) {
+    
+    if (!is.null(res_obj$summary)) {
+      df_sum <- as.data.frame(res_obj$summary)
+    } else {
+      df_sum <- NULL
+    }
+    
+    needed_sum <- c("Time", "dim_obs", "method", runtime_col)
+    has_summary_cols <- !is.null(df_sum) && all(needed_sum %in% names(df_sum))
+    
+    if (has_summary_cols) {
+      out <- df_sum
+    } else {
+      if (is.null(res_obj$df_raw)) {
+        stop("Neither usable `summary` nor `df_raw` found in one input object.")
+      }
+      df_raw <- as.data.frame(res_obj$df_raw)
+      req_raw <- c("Time", "dim_obs", "method", raw_runtime_col)
+      miss_raw <- setdiff(req_raw, names(df_raw))
+      if (length(miss_raw) > 0L) {
+        stop("`df_raw` is missing: ", paste(miss_raw, collapse = ", "))
+      }
+      
+      out <- df_raw %>%
+        group_by(Time, dim_obs, method) %>%
+        summarise(
+          !!runtime_col := mean(.data[[raw_runtime_col]], na.rm = TRUE),
+          !!error_col   := stats::sd(.data[[raw_runtime_col]], na.rm = TRUE),
+          .groups = "drop"
+        )
+    }
+    
+    if (!error_col %in% names(out)) {
+      out[[error_col]] <- NA_real_
+    }
+    
+    out$source_row <- source_label
+    out
+  }
+  
+  dim_obs_chr <- make_dim_chr(dim_obs_list)
+  dim_obs_lab <- make_dim_lab(dim_obs_list)
+  
+  df_list <- Map(
+    f = function(obj, lab) {
+      build_runtime_summary(
+        res_obj = obj,
+        source_label = lab,
+        runtime_col = runtime_col,
+        error_col = error_col,
+        raw_runtime_col = raw_runtime_col
+      )
+    },
+    obj = res_obj_list,
+    lab = source_labels
+  )
+  
+  df_all <- bind_rows(df_list)
+  
+  df_all <- df_all %>%
+    filter(Time %in% Time_list, dim_obs %in% dim_obs_chr)
+  
+  if (nrow(df_all) == 0L) {
+    stop("No rows remain after filtering by `Time_list` and `dim_obs_list`.")
+  }
+  
+  df_all <- df_all %>%
+    mutate(
+      Time = factor(Time, levels = Time_list, labels = as.character(Time_list)),
+      dim_obs = factor(dim_obs, levels = dim_obs_chr, labels = dim_obs_lab),
+      method = factor(method, levels = method_order, labels = method_labels),
+      source_row = factor(source_row, levels = source_labels)
+    )
+  
+  has_error <- all(c(runtime_col, error_col) %in% names(df_all)) &&
+    any(!is.na(df_all[[error_col]]))
+  
+  if (has_error) {
+    df_all <- df_all %>%
+      mutate(
+        ymin_runtime = pmax(.data[[runtime_col]] - .data[[error_col]], 1e-8),
+        ymax_runtime = .data[[runtime_col]] + .data[[error_col]]
+      )
+  } else {
+    error_style <- "none"
+  }
+  
+  pd <- position_dodge(width = 0.18)
+  
+  n_source <- length(source_labels)
+  use_row_facet <- n_source > 1L
+  
+  p <- ggplot(
+    df_all,
+    aes(
+      x = Time,
+      y = .data[[runtime_col]],
+      colour = method,
+      shape = method,
+      linetype = method,
+      group = method
+    )
+  )
+  
+  if (error_style == "ribbon" && has_error) {
+    ribbon_df <- df_all %>%
+      mutate(Time_id = match(Time, levels(Time)))
+    
+    p <- p +
+      geom_ribbon(
+        data = ribbon_df,
+        aes(
+          x = Time_id,
+          ymin = ymin_runtime,
+          ymax = ymax_runtime,
+          fill = method,
+          group = method
+        ),
+        inherit.aes = FALSE,
+        alpha = ribbon_alpha,
+        colour = NA
+      )
+  }
+  
+  p <- p +
+    geom_line(linewidth = line_width, position = pd) +
+    geom_point(size = point_size, position = pd)
+  
+  if (error_style == "errorbar" && has_error) {
+    p <- p +
+      geom_errorbar(
+        aes(ymin = ymin_runtime, ymax = ymax_runtime),
+        width = errorbar_width,
+        position = pd
+      )
+  }
+  
+  if (error_style == "dotted" && has_error) {
+    p <- p +
+      geom_line(
+        aes(y = ymin_runtime),
+        linewidth = dotted_line_width,
+        alpha = 0.6,
+        position = pd,
+        show.legend = FALSE
+      ) +
+      geom_line(
+        aes(y = ymax_runtime),
+        linewidth = dotted_line_width,
+        alpha = 0.6,
+        position = pd,
+        show.legend = FALSE
+      )
+  }
+  
+  p <- p +
+    geom_hline(
+      yintercept = c(1, 10, 100),
+      linewidth = 0.25,
+      linetype = "dashed",
+      alpha = 0.6
+    )
+  
+  if (use_row_facet) {
+    p <- p +
+      facet_grid(
+        rows = vars(source_row),
+        cols = vars(dim_obs),
+        labeller = labeller(
+          source_row = label_parsed,
+          dim_obs = label_value
+        )
+      )
+  } else {
+    p <- p +
+      facet_grid(
+        cols = vars(dim_obs),
+        labeller = labeller(dim_obs = label_value)
+      )
+  }
+  
+  p <- p +
+    labs(
+      x = "Time",
+      y = y_lab,
+      colour = legend_title,
+      shape = legend_title,
+      linetype = legend_title,
+      fill = legend_title
+    ) +
+    theme_bw(base_size = base_size) +
+    theme(
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 11),
+      strip.background = element_blank(),
+      strip.text = element_text(face = "bold"),
+      panel.grid = element_blank(),
+      axis.text.x = element_text(
+        angle = x_text_angle,
+        hjust = 1,
+        vjust = 1,
+        size = x_text_size
+      )
+    ) +
+    scale_shape_manual(values = c(16, 17)) +
+    scale_linetype_manual(values = c("solid", "dashed"))
+  
+  if (error_style == "ribbon" && has_error) {
+    p <- p +
+      scale_x_discrete(drop = FALSE) +
+      scale_fill_discrete(guide = "none")
+  }
+  
+  if (log_y) {
+    p <- p + scale_y_log10()
+  }
+  
+  p
+}
