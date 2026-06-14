@@ -326,11 +326,11 @@ simu_comparison <- function(method = c("TFMseg", "TFMseg.vec", "FMseg", "LR"),
         dr <- sum(G_dim * (G_dim + 1L) / 2L)
         
         thd <- if (is.null(detect_thd)) {
-          209.8954613 * sqrt(log(Time)) +
-            0.7127491 * sqrt(dr) +
-            1566.8875353 * sqrt(1 / log(Time)) +
-            1572.7173337 * log(log(Time)) / sqrt(log(Time)) -
-            2298.3882769
+          747.0283085 * sqrt(log(Time)) +
+            0.9132869 * sqrt(dr) +
+            5538.8887436 * sqrt(1 / log(Time)) +
+            5329.8863270 * log(log(Time)) / sqrt(log(Time)) -
+            7984.4027860
         } else {
           detect_thd
         }
@@ -755,35 +755,33 @@ extract_accurate <- function(res,
         q < 1 || q != as.integer(q)) {
       stop("`q` must be NULL or a positive integer.")
     }
-    
     q <- as.integer(q)
   }
   
   df_raw <- res$df_raw
-  cp_df <- res$cp_est_df
+  cp_df  <- res$cp_est_df
   
   if (!is.null(Time_list)) {
     df_raw <- df_raw %>% dplyr::filter(Time %in% Time_list)
-    cp_df <- cp_df %>% dplyr::filter(Time %in% Time_list)
+    cp_df  <- cp_df  %>% dplyr::filter(Time %in% Time_list)
   }
   
   if (!is.null(source_names)) {
     df_raw <- df_raw %>% dplyr::filter(method %in% source_names)
-    cp_df <- cp_df %>% dplyr::filter(method %in% source_names)
+    cp_df  <- cp_df  %>% dplyr::filter(method %in% source_names)
   }
   
   if (!is.null(dim_obs_list)) {
-    dim_keep <- vapply(dim_obs_list, paste, collapse = "x", FUN.VALUE = character(1))
+    dim_keep <- vapply(dim_obs_list, paste, collapse = "x",
+                       FUN.VALUE = character(1))
     
     df_raw <- df_raw %>% dplyr::filter(dim_obs %in% dim_keep)
-    cp_df <- cp_df %>% dplyr::filter(dim_obs %in% dim_keep)
+    cp_df  <- cp_df  %>% dplyr::filter(dim_obs %in% dim_keep)
   }
-  
-  df_good <- df_raw
   
   if (!is.null(q)) {
     acc_cols <- paste0("acc", seq_len(q))
-    miss_acc <- setdiff(acc_cols, names(df_good))
+    miss_acc <- setdiff(acc_cols, names(df_raw))
     
     if (length(miss_acc) > 0L) {
       stop(sprintf(
@@ -793,21 +791,51 @@ extract_accurate <- function(res,
       ))
     }
     
-    df_good <- df_good %>%
-      dplyr::filter(dplyr::if_all(dplyr::all_of(acc_cols), ~ . == 1))
+    qhat_df <- cp_df %>%
+      dplyr::group_by(Time, dim_obs, method, sim) %>%
+      dplyr::summarise(q_hat = dplyr::n(), .groups = "drop")
+    
+    df_good <- df_raw %>%
+      dplyr::rename(sim = rep_id) %>%
+      dplyr::left_join(qhat_df, by = c("Time", "dim_obs", "method", "sim")) %>%
+      dplyr::mutate(q_hat = dplyr::coalesce(q_hat, 0L)) %>%
+      dplyr::filter(
+        q_hat == q,
+        dplyr::if_all(dplyr::all_of(acc_cols), ~ . == 1)
+      )
+  } else {
+    df_good <- df_raw %>%
+      dplyr::rename(sim = rep_id)
   }
   
   keys <- df_good %>%
-    dplyr::transmute(Time, dim_obs, method, sim = rep_id) %>%
+    dplyr::select(Time, dim_obs, method, sim) %>%
     dplyr::distinct()
   
   cp_good <- cp_df %>%
     dplyr::semi_join(keys, by = c("Time", "dim_obs", "method", "sim")) %>%
     dplyr::arrange(Time, dim_obs, method, sim, scaled_cp)
   
+  seed_cols <- intersect(
+    c("seed", "seed_master", "rep_seed", "task_id", "array_id"),
+    names(df_good)
+  )
+  
+  good_realisations <- df_good %>%
+    dplyr::select(
+      Time, dim_obs, method, sim,
+      dplyr::any_of(seed_cols)
+    ) %>%
+    dplyr::distinct()
+  
   out <- res
-  out$df_raw <- df_good
+  
+  out$df_raw <- df_good %>%
+    dplyr::rename(rep_id = sim)
+  
   out$cp_est_df <- cp_good
+  
+  out$good_realisations <- good_realisations
   
   out
 }
