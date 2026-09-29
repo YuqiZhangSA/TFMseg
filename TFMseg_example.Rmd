@@ -10,7 +10,7 @@ output: html_document
 This example file corresponds to the simulation setting considered in https://arxiv.org/pdf/2604.11300.
 
 ```{r}
-r_files <- list.files("/Users/yuqi/Documents/GitHub/TFMseg/Method_funcs", pattern = "\\.R$", full.names = TRUE)
+r_files <- list.files("TFMseg/Method_funcs", pattern = "\\.R$", full.names = TRUE)
 for (f in r_files) source(f)
 
 library(tensorMiss)
@@ -67,7 +67,7 @@ data_sim <- dgp_general(
 
 
 ```{r}
-data_example <- readRDS("/Users/yuqi/Documents/GitHub/TFMseg/Method_funcs/data_example.rds")
+data_example <- readRDS("TFMseg/Method_funcs/data_example.rds")
 X <- data_example$X
 ```
 
