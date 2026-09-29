@@ -181,7 +181,8 @@ TFMseg <- function(G, G_dim,
                    V.diag = TRUE,
                    lrv = TRUE,
                    n = NULL,
-                   single = FALSE) {
+                   single = FALSE,
+                   tie_breaking = TRUE) {
   
   method <- match.arg(method)
   
@@ -193,7 +194,11 @@ TFMseg <- function(G, G_dim,
                     single = single)
   
   # sort by interval length (NOT)
-  cands <- cands[order(cands$ed - cands$st, -cands$val, cands$st, cands$ed), , drop = FALSE]
+  if(tie_breaking){
+    cands <- cands[order(cands$ed - cands$st, -cands$val, cands$st, cands$ed), , drop = FALSE]
+  } else {
+    cands <- cands[order(cands$ed - cands$st), ]
+  }
   
   st_vec <- cands$st
   ed_vec <- cands$ed

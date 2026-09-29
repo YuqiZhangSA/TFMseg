@@ -1,26 +1,3 @@
-#' General data-generating function for vector, matrix and tensor factor models with multiple change points
-#'
-#' @param model Character; one of "vector", "matrix", or "tensor".
-#' @param dim_obs Integer vector (length = model order) of observation dimensions per mode.
-#' @param dim_latent Integer vector (length = model order) of initial factor dimensions per mode.
-#' @param Time Integer; total number of time points.
-#' @param dep Logical; if FALSE, factors are i.i.d. over time (sets coeff = 0).
-#' @param coeff Numeric in (-1,1); AR(1) coefficient for all initial factors.
-#' @param true_cp Integer vector of sorted change points (< Time).
-#' @param type_mode List length q_true; at cp j, integer vector of modes that change.
-#' @param type_change List length q_true; each contains any of "l" (loading shift/transform) and/or "f" (factor-number change).
-#' @param shift_ind Optional list length q_true; each a list length = M; per change & mode: c(n_rows, n_cols) submatrix to shift; NULL = skip.
-#' @param shift_mean Numeric vector length q_true; mean for Gaussian loading perturbations.
-#' @param shift_var Numeric vector length q_true; variance for loading perturbations.
-#' @param transform_list Optional list length q_true; each a list length = M; matrices/functions to apply to loadings when "l" present.
-#' @param add_factors Optional list length q_true; each an integer vector length = M of new factor counts per mode when "f" present.
-#' @param add_factors_coeff Optional list length q_true; numeric vector length = M of AR(1) coefficients for newly added factors.
-#' @param idio Logical; include idiosyncratic term E_t.
-#' @param idio_coeff Logical; if TRUE, generate idiosyncratic errors as AR(1) with rho_e = 1 - coeff and cross-sectional covariance 0.3^|i-j|.
-#' @param dist Character; "Gaussian" or "heavy" (t_7 rescaled to var 1).
-#'
-#' @return list(X, Ft_hist, loadings_hist)
-
 dgp_general <- function(
     model = c("vector", "matrix", "tensor"),
     dim_obs,

@@ -10,8 +10,15 @@ output: html_document
 This example file corresponds to the simulation setting considered in https://arxiv.org/pdf/2604.11300.
 
 ```{r}
-r_files <- list.files("TFMseg/Method_funcs", pattern = "\\.R$", full.names = TRUE)
-for (f in r_files) source(f)
+dirs <- c(
+  "Method_funcs",
+  "Simulation"
+)
+
+for (d in dirs) {
+  r_files <- list.files(d, pattern = "\\.R$", full.names = TRUE)
+  for (f in r_files) source(f)
+}
 
 library(tensorMiss)
 library(rTensor)
@@ -29,6 +36,19 @@ library(scales)
 # Data example
 
 This dataset provides one example under (S1) in the paper, where a single mode changes at each change point. We set $T = 1600$, $K = 3$, $p = (p1, p2, p3) = (10, 10, 10)$, $r = (r1, r2, r3) = (3, 3, 3)$. The true change points are located at $(\theta_1, \theta_2, \theta_3) = (400, 800, 1200)$, with serial correlation $rho_f = 0.7$.
+
+We provide both a simulated example dataset and the code used to generate data under the corresponding simulation setting.
+
+## Loading the example data
+
+The provided example dataset can be loaded directly as follows:
+
+```{r}
+data_example <- readRDS("data_example.rds")
+X <- data_example$X
+```
+
+## Generating the example data
 
 ```{r}
 Time <- 1600
@@ -66,15 +86,10 @@ data_sim <- dgp_general(
 ```
 
 
-```{r}
-data_example <- readRDS("TFMseg/Method_funcs/data_example.rds")
-X <- data_example$X
-```
-
-
 # Loading and factor estimation
 
 See Section~3.1, we use a one-step projection estimation.
+
 ```{r}
 # input X of dimension p1 x p2 x ... x pK x T
 K <- length(dim(X)) - 1L # number of modes
@@ -91,37 +106,30 @@ G_dim <- as.vector(est_load$r_hat) # estimated pseudo-factor dim, r1 x r2 x r3
 
 # Change point detection
 
-Change point detection is implemented based on Algorithm~1 of the paper.
-
-The function TFMseg() uses global long-run covariance standardisation, as described in Section~3.3. By default, trim = floor(0.25 * T / log(T)) throughout. The default detection threshold is calibrated as Section~C.1
+Change point detection is implemented based on Algorithm 1 of the paper. The main implementation, `TFMseg_local_lrv()`, uses interval-wise HAC long-run covariance standardisation, as described in Section 3.3. By default, the trimming parameter is set to `floor(0.25 * T / log(T))`, and the detection threshold is calibrated as described in Section C.1.
 
 ```{r}
-out <- TFMseg(G = G, G_dim = G_dim, trim = NULL)
+out <- TFMseg_local_lrv(G = G, G_dim = G_dim, trim = NULL)
 out$est.cp
 ```
 
-We additionally consider a version using interval-wise HAC long-run covariance estimation
+For comparison, `TFMseg()` provides an alternative implementation using global HAC long-run covariance standardisation.
 
 ```{r}
-out_local_lrv <- TFMseg_local_lrv(G = G, G_dim = G_dim, trim = NULL)
-out_local_lrv$est.cp
+out_global_lrv <- TFMseg(G = G, G_dim = G_dim, trim = NULL)
+out_global_lrv$est.cp
 ```
 
 
 
 # Mode-identification
 
-Mode identification is implemented based on Eq.(3.3) of the paper and takes the previously estimated change points as input. We report the results under both global and local long-run covariance standardisation. The default identification threshold is calibrated as Section~C.2.
+Mode-identification is implemented based on Eq. (3.3) of the paper and takes the estimated change points as input. The default identification threshold is calibrated as described in Section C.2.
 
-Using change points estimated under global long-run covariance standardisation:
+Using the change points estimated by the main TFMseg implementation:
 
 ```{r}
 out_modes <- id_modes(G = G, G_dim = G_dim, dim_obs = dim_X, cp_vec = out$est.cp, id_thd_coef = NULL)
 out_modes$changed
-```
-
-```{r}
-out_modes_local_lrv <- id_modes(G = G, G_dim = G_dim, dim_obs = dim_X, cp_vec = out_local_lrv$est.cp, id_thd_coef = NULL)
-out_modes_local_lrv$changed
 ```
 

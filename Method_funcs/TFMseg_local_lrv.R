@@ -356,7 +356,8 @@ TFMseg_local_lrv <- function(G, G_dim,
                    V.diag = TRUE,
                    lrv = TRUE,
                    n = NULL,
-                   single = FALSE) {
+                   single = FALSE,
+                   tie_breaking = TRUE) {
   
   method <- match.arg(method)
   
@@ -386,8 +387,12 @@ TFMseg_local_lrv <- function(G, G_dim,
   }
   
   # sort by interval length, i.e. NOT rule
-  cands <- cands[order(cands$ed - cands$st, -cands$val, cands$st, cands$ed), , drop = FALSE]
-  
+  if(tie_breaking){
+    cands <- cands[order(cands$ed - cands$st, -cands$val, cands$st, cands$ed), , drop = FALSE]
+  } else {
+    cands <- cands[order(cands$ed - cands$st), ]
+  }
+
   st_vec <- cands$st
   ed_vec <- cands$ed
   cp_vec <- cands$est.cp

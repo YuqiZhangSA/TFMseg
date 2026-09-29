@@ -1,0 +1,529 @@
+---
+title: "examples"
+author: "yuqi"
+date: "2026-03-07"
+output: html_document
+---
+
+# Detection
+
+## S0 + dependence
+
+```{r}
+tab_s0 <- simu_ret(methods = c("TFMseg", "LR"), 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s0", dep = TRUE, theta_coef = c(0,0,0))
+tab_s0$table
+```
+
+## S0 + independence
+
+```{r}
+tab_s0_indep <- simu_ret(methods = c("TFMseg", "LR"), 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s0", dep = FALSE, theta_coef = c(0,0,0))
+tab_s0_indep$table
+```
+
+## S1 + equal + dependence
+
+```{r}
+tab_s1_eq <- simu_ret(methods = c("TFMseg", "oraclePZW", "LR"), 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s1", dep = TRUE, theta_coef = c(0.25,0.5,0.75))
+tab_s1_eq$table
+
+tab_s1_eq_good <- extract_accurate(tab_s1_eq, 
+                                   source_names = c("TFMseg","oraclePZW", "LR"), q = 3)
+
+multi_hist_subplot(
+  tab_s1_eq, # all
+  tab_s1_eq_good, # filtered
+  Time_list = c(400, 800, 1600, 3200),
+  dim_obs_list =  list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+  theta_coef = c(0.25, 0.5, 0.75),
+  source_names = c("TFMseg","oraclePZW", "LR"),
+  compare_dataset = TRUE,
+  dataset_names = c("All", "Exact 3"),
+  setting = "S1")
+```
+
+## S1 + equal + independence
+
+```{r}
+tab_s1_eq_indep <- simu_ret(methods = c("TFMseg", "oraclePZW", "LR"), 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s1", dep = FALSE, theta_coef = c(0.25,0.5,0.75))
+tab_s1_eq_indep$table
+
+tab_s1_eq_indep_good <- extract_accurate(tab_s1_eq_indep, 
+                                   source_names = c("TFMseg","oraclePZW", "LR"), q = 3)
+
+multi_hist_subplot(
+  tab_s1_eq_indep, # all
+  tab_s1_eq_indep_good, # filtered
+  Time_list = c(400, 800, 1600, 3200),
+  dim_obs_list =  list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+  theta_coef = c(0.25, 0.5, 0.75),
+  source_names = c("TFMseg","oraclePZW", "LR"),
+  compare_dataset = TRUE,
+  dataset_names = c("All", "Exact 3"),
+  setting = "S1")
+```
+
+## S1 + unequal + dependence
+
+```{r}
+tab_s1_uneq <- simu_ret(methods = c("TFMseg", "oraclePZW", "LR"), 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s1", dep = TRUE, theta_coef = c(0.25,0.5,0.625))
+tab_s1_uneq$table
+
+tab_s1_uneq_good <- extract_accurate(tab_s1_uneq, 
+                                   source_names = c("TFMseg","oraclePZW", "LR"), q = 3)
+
+multi_hist_subplot(
+  tab_s1_uneq, # all
+  tab_s1_uneq_good, # filtered
+  Time_list = c(400, 800, 1600, 3200),
+  dim_obs_list =  list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+  theta_coef = c(0.25, 0.5, 0.625),
+  source_names = c("TFMseg","oraclePZW", "LR"),
+  compare_dataset = TRUE,
+  dataset_names = c("All", "Exact 3"),
+  setting = "S1")
+```
+
+## S1 + unequal + independence
+
+```{r}
+tab_s1_uneq_indep <- simu_ret(methods = c("TFMseg", "oraclePZW", "LR"), 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s1", dep = FALSE, theta_coef = c(0.25,0.5,0.625))
+tab_s1_uneq_indep$table
+
+tab_s1_uneq_indep_good <- extract_accurate(tab_s1_uneq_indep, 
+                                   source_names = c("TFMseg","oraclePZW", "LR"), q = 3)
+
+multi_hist_subplot(
+  tab_s1_uneq_indep, # all
+  tab_s1_uneq_indep_good, # filtered
+  Time_list = c(400, 800, 1600, 3200),
+  dim_obs_list =  list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+  theta_coef = c(0.25, 0.5, 0.625),
+  source_names = c("TFMseg","oraclePZW", "LR"),
+  compare_dataset = TRUE,
+  dataset_names = c("All", "Exact 3"),
+  setting = "S1")
+```
+
+
+## S2 + equal + dependence
+
+```{r}
+tab_s2_eq <- simu_ret(methods = c("TFMseg", "oraclePZW", "LR"), 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s2", dep = TRUE, theta_coef = c(0.25,0.5,0.75))
+tab_s2_eq$table
+
+tab_s2_eq_good <- extract_accurate(tab_s2_eq, 
+                                   source_names = c("TFMseg","oraclePZW", "LR"), q = 3)
+
+multi_hist_subplot(
+  tab_s2_eq, # all
+  tab_s2_eq_good, # filtered
+  Time_list = c(400, 800, 1600, 3200),
+  dim_obs_list =  list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+  theta_coef = c(0.25, 0.5, 0.75),
+  source_names = c("TFMseg","oraclePZW", "LR"),
+  compare_dataset = TRUE,
+  dataset_names = c("All", "Exact 3"),
+  setting = "S2")
+```
+
+## S2 + equal + independence
+
+```{r}
+tab_s2_eq_indep <- simu_ret(methods = c("TFMseg", "oraclePZW", "LR"), 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s2", dep = FALSE, theta_coef = c(0.25,0.5,0.75))
+tab_s2_eq_indep$table
+
+tab_s2_eq_indep_good <- extract_accurate(tab_s2_eq_indep, 
+                                   source_names = c("TFMseg","oraclePZW", "LR"), q = 3)
+
+multi_hist_subplot(
+  tab_s2_eq_indep, # all
+  tab_s2_eq_indep_good, # filtered
+  Time_list = c(400, 800, 1600, 3200),
+  dim_obs_list =  list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+  theta_coef = c(0.25, 0.5, 0.75),
+  source_names = c("TFMseg","oraclePZW", "LR"),
+  compare_dataset = TRUE,
+  dataset_names = c("All", "Exact 3"),
+  setting = "S2")
+```
+
+## S2 + unequal + dependence
+
+```{r}
+tab_s2_uneq <- simu_ret(methods = c("TFMseg", "oraclePZW", "LR"), 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s2", dep = TRUE, theta_coef = c(0.25,0.5,0.625))
+tab_s2_uneq$table
+
+tab_s2_uneq_good <- extract_accurate(tab_s2_uneq, 
+                                   source_names = c("TFMseg","oraclePZW", "LR"), q = 3)
+
+multi_hist_subplot(
+  tab_s2_uneq, # all
+  tab_s2_uneq_good, # filtered
+  Time_list = c(400, 800, 1600, 3200),
+  dim_obs_list =  list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+  theta_coef = c(0.25, 0.5, 0.625),
+  source_names = c("TFMseg","oraclePZW", "LR"),
+  compare_dataset = TRUE,
+  dataset_names = c("All", "Exact 3"),
+  setting = "S2")
+```
+
+## S2 + unequal + independence
+
+```{r}
+tab_s2_uneq_indep <- simu_ret(methods = c("TFMseg", "oraclePZW", "LR"), 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s2", dep = FALSE, theta_coef = c(0.25,0.5,0.625))
+tab_s2_uneq_indep$table
+
+tab_s2_uneq_indep_good <- extract_accurate(tab_s2_uneq_indep, 
+                                   source_names = c("TFMseg","oraclePZW", "LR"), q = 3)
+
+multi_hist_subplot(
+  tab_s2_uneq_indep, # all
+  tab_s2_uneq_indep_good, # filtered
+  Time_list = c(400, 800, 1600, 3200),
+  dim_obs_list =  list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+  theta_coef = c(0.25, 0.5, 0.625),
+  source_names = c("TFMseg","oraclePZW", "LR"),
+  compare_dataset = TRUE,
+  dataset_names = c("All", "Exact 3"),
+  setting = "S2")
+```
+
+# Identification
+
+## S1 + equal + dependence
+
+```{r}
+id_s1_eq <- id_modes_1(cp_est_df = tab_s1_eq_good$cp_est_df,
+                        dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                        Time_list = c(400, 800, 1600, 3200),
+                        dim_latent  = c(3,3,3),
+                        theta_coef  = c(0.25,0.5,0.75),
+                        r_hat = NULL,
+                        trim_len = 1,
+                        use_true_cp = FALSE,
+                        data_setting = "s1")
+
+
+eval_all(id_s1_eq, id_thd_coef = 3.8, true_mode_list = list(c(1), c(2), c(3)))
+```
+
+## S1 + equal + independence
+
+```{r}
+id_s1_eq_indep <- id_modes_1(cp_est_df = tab_s1_eq_indep_good$cp_est_df,
+                        dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                        Time_list = c(400, 800, 1600, 3200),
+                        dim_latent  = c(3,3,3),
+                        theta_coef  = c(0.25,0.5,0.75),
+                        r_hat = NULL,
+                        trim_len = 1,
+                        use_true_cp = FALSE,
+                        data_setting = "s1")
+
+
+eval_all(id_s1_eq_indep, id_thd_coef = 3.8, true_mode_list = list(c(1), c(2), c(3)))
+```
+
+
+
+## S1 + unequal + dependence
+
+```{r}
+id_s1_uneq <- id_modes_1(cp_est_df = tab_s1_uneq_good$cp_est_df,
+                        dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                        Time_list = c(400, 800, 1600, 3200),
+                        dim_latent  = c(3,3,3),
+                        theta_coef  = c(0.25,0.5,0.625),
+                        r_hat = NULL,
+                        trim_len = 1,
+                        use_true_cp = FALSE,
+                        data_setting = "s1")
+
+
+eval_all(id_s1_uneq, id_thd_coef = 3.8, true_mode_list = list(c(1), c(2), c(3)))
+```
+
+## S1 + unequal + independence
+
+```{r}
+id_s1_uneq_indep <- id_modes_1(cp_est_df = tab_s1_uneq_indep_good$cp_est_df,
+                        dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                        Time_list = c(400, 800, 1600, 3200),
+                        dim_latent  = c(3,3,3),
+                        theta_coef  = c(0.25,0.5,0.625),
+                        r_hat = NULL,
+                        trim_len = 1,
+                        use_true_cp = FALSE,
+                        data_setting = "s1")
+
+
+eval_all(id_s1_uneq_indep, id_thd_coef = 3.8, true_mode_list = list(c(1), c(2), c(3)))
+```
+
+## S2 + equal + dependence
+
+```{r}
+id_s2_eq <- id_modes_1(cp_est_df = tab_s2_eq_good$cp_est_df,
+                        dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                        Time_list = c(400, 800, 1600, 3200),
+                        dim_latent  = c(3,3,3),
+                        theta_coef  = c(0.25,0.5,0.75),
+                        r_hat = NULL,
+                        trim_len = 1,
+                        use_true_cp = FALSE,
+                        data_setting = "s2")
+
+
+eval_all(id_s2_eq, id_thd_coef = 3.8, true_mode_list = list(c(1), c(2), c(2,3)))
+```
+
+## S2 + equal + independence
+
+```{r}
+id_s2_eq_indep <- id_modes_1(cp_est_df = tab_s2_eq_indep_good$cp_est_df,
+                        dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                        Time_list = c(400, 800, 1600, 3200),
+                        dim_latent  = c(3,3,3),
+                        theta_coef  = c(0.25,0.5,0.75),
+                        r_hat = NULL,
+                        trim_len = 1,
+                        use_true_cp = FALSE,
+                        data_setting = "s2")
+
+
+eval_all(id_s2_eq_indep, id_thd_coef = 3.8, true_mode_list = list(c(1), c(2), c(2,3)))
+```
+
+
+
+## S2 + unequal + dependence
+
+```{r}
+id_s2_uneq <- id_modes_1(cp_est_df = tab_s2_uneq_good$cp_est_df,
+                        dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                        Time_list = c(400, 800, 1600, 3200),
+                        dim_latent  = c(3,3,3),
+                        theta_coef  = c(0.25,0.5,0.625),
+                        r_hat = NULL,
+                        trim_len = 1,
+                        use_true_cp = FALSE,
+                        data_setting = "s2")
+
+
+eval_all(id_s2_uneq, id_thd_coef = 3.8, true_mode_list = list(c(1), c(2), c(2,3)))
+```
+
+## S2 + unequal + independence
+
+```{r}
+id_s2_uneq_indep <- id_modes_1(cp_est_df = tab_s2_uneq_indep_good$cp_est_df,
+                        dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                        Time_list = c(400, 800, 1600, 3200),
+                        dim_latent  = c(3,3,3),
+                        theta_coef  = c(0.25,0.5,0.625),
+                        r_hat = NULL,
+                        trim_len = 1,
+                        use_true_cp = FALSE,
+                        data_setting = "s2")
+
+
+eval_all(id_s2_uneq_indep, id_thd_coef = 3.8, true_mode_list = list(c(1), c(2), c(2,3)))
+```
+
+
+# Mode-informed estimation
+
+```{r}
+MI_reest <- simu_reest(
+  Time_list = c(400, 800, 1600, 3200)[1],
+  dim_obs_list = list(c(10,10,10), c(10,10,100), c(10,100,10), c(100,10,10))[1],
+  dim_latent = c(3, 3, 3),
+  dep = FALSE,
+  theta_coef = 0.5,
+  use_true_cp = FALSE
+)
+```
+
+```{r}
+plot_reest_box(
+  reest_obj = MI_reest,
+  Time_select = 400,
+  dim_obs_list = list(c(10, 10, 10), c(10, 10, 100), c(10,100,10), c(100,10,10), c(100,10,10)),
+  y_lim = c(0,0.05),
+  title_suffix = "T = 400, using estimated factor numbers",
+  legend_labels = c("Segment pre", "Segment post", "Mode-informed")
+)
+```
+
+
+```{r}
+plot_reest_box_all_mode(
+  reest_obj = MI_reest,
+  Time_list = c(400, 800, 1600, 3200),
+  dim_obs_list = list(
+    c(10, 10, 10),
+    c(10, 10, 100),
+    c(10, 100, 10),
+    c(100, 10, 10)
+  ),
+  y_lim = list(c(0, 0.05), c(0, 0.03), c(0, 0.03), c(0, 0.02)),
+  title_suffix = "All modes: using estimated factor numbers",
+  legend_labels = c("Segment pre", "Segment post", "Mode-informed")
+)
+```
+
+
+# Detection with missingness
+
+## S1 + equal + dependence + missingness
+
+```{r}
+miss_tab_s1_eq <- simu_ret(methods = "TFMseg", 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s1", dep = TRUE, theta_coef = c(0.25,0.5,0.75),
+                  miss = TRUE)
+miss_tab_s1_eq$table
+
+miss_tab_s1_eq_good <- extract_accurate(miss_tab_s1_eq, 
+                                   source_names = "TFMseg", q = 3)
+
+multi_hist_subplot_method(
+  complete_1 = tab_s1_eq,
+  extract_1 = tab_s1_eq_good,
+  complete_2 = miss_tab_s1_eq,
+  extract_2 = miss_tab_s1_eq_good,
+  Time_list = c(400, 1600),
+  theta_coef = c(0.25, 0.5, 0.75),
+  dim_obs_list = list(c(10, 10, 10), c(10, 10, 100), c(10, 20, 40), c(20, 20, 20)),
+  source_names = c("TFMseg"),
+  scenario_names = c("Complete data", "Missingness"),
+  dataset_names = c("All", "Exact 3"),
+  dataset_alpha = 0.5,
+  dataset_position = "identity",
+  setting = "S1"
+)
+```
+
+## S1 + equal + independence + missingness
+
+```{r}
+miss_tab_s1_eq_indep <- simu_ret(methods = "TFMseg", 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s1", dep = FALSE, theta_coef = c(0.25,0.5,0.75),
+                  miss = TRUE)
+miss_tab_s1_eq_indep$table
+
+miss_tab_s1_eq_indep_good <- extract_accurate(miss_tab_s1_eq_indep, 
+                                   source_names = "TFMseg", q = 3)
+
+multi_hist_subplot_method(
+  complete_1 = tab_s1_eq_indep,
+  extract_1 = tab_s1_eq_indep_good,
+  complete_2 = miss_tab_s1_eq_indep,
+  extract_2 = miss_tab_s1_eq_indep_good,
+  Time_list = c(400, 1600),
+  theta_coef = c(0.25, 0.5, 0.75),
+  dim_obs_list = list(c(10, 10, 10), c(10, 10, 100), c(10, 20, 40), c(20, 20, 20)),
+  source_names = c("TFMseg"),
+  scenario_names = c("Complete data", "Missingness"),
+  dataset_names = c("All", "Exact 3"),
+  dataset_alpha = 0.5,
+  dataset_position = "identity",
+  setting = "S1"
+)
+```
+
+## S1 + unequal + dependence + missingness
+
+```{r}
+miss_tab_s1_uneq <- simu_ret(methods = "TFMseg", 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s1", dep = TRUE, theta_coef = c(0.25,0.5,0.625),
+                  miss = TRUE)
+miss_tab_s1_uneq$table
+
+miss_tab_s1_uneq_good <- extract_accurate(miss_tab_s1_uneq, 
+                                   source_names = "TFMseg", q = 3)
+
+multi_hist_subplot_method(
+  complete_1 = tab_s1_uneq,
+  extract_1 = tab_s1_uneq_good,
+  complete_2 = miss_tab_s1_uneq,
+  extract_2 = miss_tab_s1_uneq_good,
+  Time_list = c(400, 1600),
+  theta_coef = c(0.25, 0.5, 0.625),
+  dim_obs_list = list(c(10, 10, 10), c(10, 10, 100), c(10, 20, 40), c(20, 20, 20)),
+  source_names = c("TFMseg"),
+  scenario_names = c("Complete data", "Missingness"),
+  dataset_names = c("All", "Exact 3"),
+  dataset_alpha = 0.5,
+  dataset_position = "identity",
+  setting = "S1"
+)
+```
+
+## S1 + unequal + independence + missingness
+
+```{r}
+miss_tab_s1_uneq_indep <- simu_ret(methods = "TFMseg", 
+                  dim_obs_list = list(c(10,10,10), c(20,20,20), c(10,20,40), c(10,10,100)),
+                  Time_list = c(400, 800, 1600, 3200),
+                  data_setting = "s1", dep = FALSE, theta_coef = c(0.25,0.5,0.625),
+                  miss = TRUE)
+miss_tab_s1_uneq_indep$table
+
+miss_tab_s1_uneq_indep_good <- extract_accurate(miss_tab_s1_uneq_indep, 
+                                   source_names = "TFMseg", q = 3)
+
+multi_hist_subplot_method(
+  complete_1 = tab_s1_uneq_indep,
+  extract_1 = tab_s1_uneq_indep_good,
+  complete_2 = miss_tab_s1_uneq_indep,
+  extract_2 = miss_tab_s1_uneq_indep_good,
+  Time_list = c(400, 1600),
+  theta_coef = c(0.25, 0.5, 0.625),
+  dim_obs_list = list(c(10, 10, 10), c(10, 10, 100), c(10, 20, 40), c(20, 20, 20)),
+  source_names = c("TFMseg"),
+  scenario_names = c("Complete data", "Missingness"),
+  dataset_names = c("All", "Exact 3"),
+  dataset_alpha = 0.5,
+  dataset_position = "identity",
+  setting = "S1"
+)
+```
+
