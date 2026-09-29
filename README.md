@@ -14,7 +14,7 @@ The repository provides code for:
 - mode-informed loading space estimation;
 - simulation experiments.
 
-The complete simulation results are collected in `simulation.Rmd`. A worked example illustrating the use of TFMseg is provided in `TFMseg_example.Rmd`.
+The complete simulation results are collected in `simulation.Rmd`. A worked example illustrating the use of TFMseg is provided in `example.Rmd`.
 
 ## Repository structure
 
@@ -22,7 +22,7 @@ The complete simulation results are collected in `simulation.Rmd`. A worked exam
 TFMseg/
 ├── README.md
 ├── simulation.Rmd
-├── TFMseg_example.Rmd
+├── example.Rmd
 ├── data_example.rds
 ├── Method_funcs/
 │   ├── SBS.R
@@ -49,8 +49,8 @@ The main files are:
 - `mode_identification.R`: implements mode-identification and the corresponding evaluation functions.
 - `DGP.R`: contains the data-generating mechanism for vector, matrix and tensor factor models with multiple change points.
 - `simulation.Rmd`: reproduces the complete simulation analyses and figures reported in the paper.
-- `TFMseg_example.Rmd`: provides a worked example illustrating how to apply TFMseg to a simulated tensor time series.
-- `data_example.rds`: contains the simulated dataset used in `TFMseg_example.Rmd`, generated under setting (S1) of the paper.
+- `example.Rmd`: provides a worked example illustrating how to apply TFMseg to a simulated tensor time series.
+- `data_example.rds`: contains the simulated dataset used in `example.Rmd`, generated under setting (S1) of the paper.
 
 `simulation.Rmd` also uses simulation wrappers and plotting functions from the `Simulation/` directory. These helper files should therefore be kept in the repository together with the files listed above.
 
@@ -115,4 +115,4 @@ The full simulation grid covers the settings considered in the appendix, includi
 
 ## Example
 
-For a worked example illustrating change point detection and mode-identification using TFMseg, see `TFMseg_example.Rmd`. The example uses the simulated dataset stored in `data_example.rds`.
+For a worked example illustrating change point detection and mode-identification using TFMseg, see `example.Rmd`. The example uses the simulated dataset stored in `data_example.rds`.
