@@ -18,7 +18,7 @@ mode_cov_from_G <- function(G, mode_k, a, b) {
 }
 
 
-# eq(3.1) in the main text
+# eq(3.5) in the main text
 zeta_pair <- function(G_pre, G_post) {
   s0 <- sum(diag(G_pre))
   s1 <- sum(diag(G_post))
@@ -38,10 +38,12 @@ id_modes <- function(G,
                     cp_vec,
                     st = 1L,
                     ed = dim(G)[length(G_dim) + 1L],
-                    id_thd_coef = 3
+                    id_thd_coef = NULL
 ) {
   stopifnot(is.array(G), length(dim(G)) == length(G_dim) + 1L)
   stopifnot(all(as.integer(dim(G))[seq_along(G_dim)] == as.integer(G_dim)))
+  
+  if(is.null(id_thd_coef)) id_thd_coef <- 3.8
   
   dim_obs <- as.integer(dim_obs)
   p <- prod(dim_obs)
@@ -97,9 +99,7 @@ id_modes <- function(G,
   )
 }
 
-#----------------------------
-# evaluation
-#----------------------------
+
 
 # evaluator for one setting
 eval_modes <- function(

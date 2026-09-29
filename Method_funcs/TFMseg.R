@@ -9,7 +9,7 @@ unfold_mode_k <- function(tensor, mode) {
   matrix(unfolded, nrow = dims[mode])
 }
 
-# "next-highest" threshold: largest cusum value among non-overlapping intervals
+# next-highest threshold: largest cusum value among non-overlapping intervals
 compute_next_threshold <- function(current_threshold, S, thds, all_results, Time) {
   cand_candidates <- sort(thds[thds < current_threshold], decreasing = TRUE)
   
@@ -81,7 +81,7 @@ find_single_cp_t <- function(D, st, ed, trim) {
 }
 
 
-# candidates under SBS, using stacked cusum
+# candidates under SBS
 cand_sbs <- function(G, 
                      G_dim,
                      trim = NULL,
@@ -172,9 +172,7 @@ cand_sbs <- function(G,
 
 
 
-# -------------------------------------------------------------------
-# TFMseg
-# -------------------------------------------------------------------
+# TFMseg under global lrv
 TFMseg <- function(G, G_dim,
                    trim = round(0.25 * dim(G)[length(G_dim) + 1] / log(dim(G)[length(G_dim) + 1])),
                    method = c("fixed", "oracle"),
@@ -195,7 +193,8 @@ TFMseg <- function(G, G_dim,
                     single = single)
   
   # sort by interval length (NOT)
-  cands <- cands[order(cands$ed - cands$st), ]
+  cands <- cands[order(cands$ed - cands$st, -cands$val, cands$st, cands$ed), , drop = FALSE]
+  
   st_vec <- cands$st
   ed_vec <- cands$ed
   cp_vec <- cands$est.cp
@@ -237,8 +236,15 @@ TFMseg <- function(G, G_dim,
   
   if (method == "fixed") {
     
-    if (is.null(threshold))
-      stop("Must supply 'threshold' in fixed mode.")
+    if (is.null(threshold)) {
+      dr <- sum(G_dim * (G_dim + 1L) / 2L)
+      threshold <- 209.8954613 * sqrt(log(Time)) +
+        0.7127491 * sqrt(dr) +
+        1566.8875353 * sqrt(1 / log(Time)) +
+        1572.7173337 * log(log(Time)) / sqrt(log(Time)) -
+        2298.3882769
+    }
+  
     
     avail <- which(val_vec >= threshold + 5e-3)
     sel <- integer(0)

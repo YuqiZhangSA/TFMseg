@@ -143,11 +143,11 @@ compare_reest <- function(
   
   dr <- sum(G_dim * (G_dim + 1L) / 2L)
   thd <- if (is.null(detect_thd)) {
-    209.8954613 * sqrt(log(Time)) +
-      0.7127491 * sqrt(dr) +
-      1566.8875353 * sqrt(1 / log(Time)) +
-      1572.7173337 * log(log(Time)) / sqrt(log(Time)) -
-      2298.3882769
+    747.0283085 * sqrt(log(Time)) +
+      0.9132869 * sqrt(dr) +
+      5538.8887436 * sqrt(1 / log(Time)) +
+      5329.8863270 * log(log(Time)) / sqrt(log(Time)) -
+      7984.4027860
   } else {
     detect_thd
   }

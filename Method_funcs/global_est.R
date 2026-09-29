@@ -1,6 +1,6 @@
 global_pca <- function(X, dim_X, r_hat = NULL,
                        st = NULL, ed = NULL,
-                       centre = FALSE, proj = TRUE) {
+                       centre = TRUE, proj = TRUE) {
   K <- length(dim_X)
   all_dims <- dim(X)
   TT <- all_dims[K + 1]

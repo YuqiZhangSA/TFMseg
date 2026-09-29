@@ -1,12 +1,6 @@
-# -------------------------------------------------------------------
-# lower-triangular vectorisation
-# -------------------------------------------------------------------
 vech <- function(M) M[lower.tri(M, diag = TRUE)]
 
 
-# -------------------------------------------------------------------
-# mode unfolding
-# -------------------------------------------------------------------
 unfold_mode_k <- function(tensor, mode) {
   dims <- dim(tensor)
   perm <- c(mode, setdiff(seq_along(dims), mode))
@@ -15,10 +9,7 @@ unfold_mode_k <- function(tensor, mode) {
 }
 
 
-# -------------------------------------------------------------------
 # interval-wise HAC/LRV standardisation
-# Z is a d x L matrix restricted to one seeded interval
-# -------------------------------------------------------------------
 int_lrv <- function(Z, V.diag = TRUE, lrv = TRUE,
                     n = NULL, eps = 1e-8, centre = TRUE) {
   
@@ -101,9 +92,6 @@ int_lrv <- function(Z, V.diag = TRUE, lrv = TRUE,
 }
 
 
-# -------------------------------------------------------------------
-# construct raw mode-wise covariance-vector series once
-# -------------------------------------------------------------------
 make_GG_list <- function(G, G_dim) {
   
   K <- length(G_dim)
@@ -138,9 +126,8 @@ make_GG_list <- function(G, G_dim) {
 }
 
 
-# -------------------------------------------------------------------
+
 # stacked interval-wise standardisation over all tensor modes
-# -------------------------------------------------------------------
 int_std_stack <- function(GG_list,
                           st,
                           ed,
@@ -173,11 +160,9 @@ int_std_stack <- function(GG_list,
 }
 
 
-# -------------------------------------------------------------------
-# find single cp on a given locally standardised interval
-# D has columns corresponding only to the interval
-# -------------------------------------------------------------------
-find_single_cp <- function(D, st, ed, trim) {
+
+# find single cp on a given interval
+find_single_cp_local_lrv <- function(D, st, ed, trim) {
   
   len <- ncol(D)
   stopifnot(len >= 2 * trim + 1)
@@ -215,9 +200,8 @@ find_single_cp <- function(D, st, ed, trim) {
 }
 
 
-# -------------------------------------------------------------------
+
 # next-highest threshold: largest cusum value among non-overlapping intervals
-# -------------------------------------------------------------------
 compute_next_threshold <- function(current_threshold, S, thds, all_results, Time) {
   
   cand_candidates <- sort(
@@ -270,10 +254,9 @@ compute_next_threshold <- function(current_threshold, S, thds, all_results, Time
 }
 
 
-# -------------------------------------------------------------------
+
 # candidates under SBS, using stacked interval-wise HAC standardisation
-# -------------------------------------------------------------------
-cand_sbs <- function(G, 
+cand_sbs_local_lrv <- function(G, 
                      G_dim,
                      trim = NULL,
                      V.diag = TRUE,
@@ -328,7 +311,7 @@ cand_sbs <- function(G,
       n = n
     )
     
-    res <- find_single_cp(
+    res <- find_single_cp_local_lrv(
       D = D_stack,
       st = iv$st,
       ed = iv$ed,
@@ -363,10 +346,8 @@ cand_sbs <- function(G,
 }
 
 
-# -------------------------------------------------------------------
-# TFMseg
-# -------------------------------------------------------------------
-TFMseg <- function(G, G_dim,
+# TFMseg under local HAC
+TFMseg_local_lrv <- function(G, G_dim,
                    trim = floor(0.25 * dim(G)[length(G_dim) + 1] /
                                   log(dim(G)[length(G_dim) + 1])),
                    method = c("fixed", "oracle"),
@@ -379,7 +360,7 @@ TFMseg <- function(G, G_dim,
   
   method <- match.arg(method)
   
-  cands <- cand_sbs(
+  cands <- cand_sbs_local_lrv(
     G = G,
     G_dim = G_dim,
     trim = trim,
@@ -405,7 +386,7 @@ TFMseg <- function(G, G_dim,
   }
   
   # sort by interval length, i.e. NOT rule
-  cands <- cands[order(cands$ed - cands$st), ]
+  cands <- cands[order(cands$ed - cands$st, -cands$val, cands$st, cands$ed), , drop = FALSE]
   
   st_vec <- cands$st
   ed_vec <- cands$ed
@@ -450,8 +431,14 @@ TFMseg <- function(G, G_dim,
   if (method == "fixed") {
     
     if (is.null(threshold)) {
-      stop("Must supply 'threshold' in fixed mode.")
-    }
+      dr <- sum(G_dim * (G_dim + 1L) / 2L)
+      threshold <- 747.0283085 * sqrt(log(Time)) +
+                    0.9132869 * sqrt(dr) +
+                    5538.8887436 * sqrt(1 / log(Time)) +
+                    5329.8863270 * log(log(Time)) / sqrt(log(Time)) -
+                    7984.4027860
+      }
+    
     
     avail <- which(val_vec >= threshold + 5e-3)
     sel <- integer(0)

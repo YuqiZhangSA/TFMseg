@@ -44,12 +44,4 @@ seeded_intervals <- function(Time, minl = NULL) {
 
 
 
-# for (Time in c(400, 800, 1600, 3200)) {
-#   iv <- seeded_intervals(Time, floor(0.5*Time/log(Time)))
-#   cat("Time=", Time,
-#       " #intervals=", nrow(iv),
-#       " minLen=", min(iv$ed - iv$st),
-#       " 0.5*Time/log(Time)=", floor(0.5 * Time/log(Time)), "\n")
-# }
-
 
